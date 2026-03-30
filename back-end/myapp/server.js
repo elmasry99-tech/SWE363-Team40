@@ -8,9 +8,18 @@ import morgan from 'morgan';
 import { v4 as uuidv4 } from 'uuid';
 import sccBrokerClient from 'scc-broker-client';
 import { fileURLToPath } from 'url';
+import cors from 'cors';
+import dotenv from 'dotenv';
 
+import multer from 'multer';
+
+
+dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+
+
 
 const ENVIRONMENT = process.env.ENV || 'dev';
 const SOCKETCLUSTER_PORT = process.env.SOCKETCLUSTER_PORT || 8000;
@@ -42,7 +51,17 @@ if (process.env.SOCKETCLUSTER_OPTIONS) {
 let httpServer = eetase(http.createServer());
 let agServer = socketClusterServer.attach(httpServer, agOptions);
 
+
+
 let expressApp = express();
+expressApp.use(cors());
+expressApp.use(express.json());
+expressApp.use(express.urlencoded({ extended: true }));
+
+const upload = multer({ dest: path.join(__dirname, 'uploads/') });
+
+
+
 if (ENVIRONMENT === 'dev') {
   // Log every HTTP request. See https://github.com/expressjs/morgan for other
   // available formats.
@@ -126,3 +145,15 @@ if (SCC_STATE_SERVER_HOST) {
     })();
   }
 }
+
+expressApp.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('No file uploaded.');
+  }
+  console.log(`[CipherNet] File received: ${req.file.originalname}`);
+  
+  res.status(200).json({ 
+    message: 'File received successfully!',
+    filename: req.file.filename 
+  });
+});

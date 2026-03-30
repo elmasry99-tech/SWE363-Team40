@@ -10,9 +10,12 @@
     }
   ],
   "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
     "eetase": "^7.0.1",
     "express": "^4.16.3",
     "morgan": "^1.7.0",
+    "multer": "^2.1.1",
     "nodemon": "^3.1.10",
     "scc-broker-client": "^9.2.1",
     "serve-static": "^1.13.2",
