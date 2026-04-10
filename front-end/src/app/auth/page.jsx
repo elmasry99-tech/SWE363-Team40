@@ -2,24 +2,32 @@
 import { useState } from 'react';
 import Login from '../components/Login.jsx';
 import SignUp from '../components/SignUp.jsx';
+import RoleSelection from '../components/RoleSelection.jsx';
   
 export default function AuthPage() {
+  const [selectedRole, setSelectedRole] = useState(null);
   const [isLogin, setIsLogin] = useState(true);
 
-  return (
-    <div>
-      <h1>{isLogin ? 'Login Page' : 'Sign Up Page'}</h1>
-      
-      {isLogin ? <Login /> : <SignUp />}
+  // If no role selected, show role selection
+  if (!selectedRole) {
+    return <RoleSelection onRoleSelect={setSelectedRole} />;
+  }
 
-      <div style={{ marginTop: '20px' }}>
-        <p>
-          {isLogin ? "Don't have an account? " : "Already have an account? "}
-          <button onClick={() => setIsLogin(!isLogin)}>
-            {isLogin ? 'Switch to Sign Up' : 'Switch to Login'}
-          </button>
-        </p>
-      </div>
+  return (
+    <div className="min-h-screen">
+      {isLogin ? (
+        <Login 
+          role={selectedRole}
+          onSwitchToSignUp={() => setIsLogin(false)}
+          onChangeRole={() => setSelectedRole(null)}
+        />
+      ) : (
+        <SignUp 
+          role={selectedRole}
+          onSwitchToLogin={() => setIsLogin(true)}
+          onChangeRole={() => setSelectedRole(null)}
+        />
+      )}
     </div>
   );
 }
