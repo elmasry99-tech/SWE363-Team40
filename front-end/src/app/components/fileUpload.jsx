@@ -7,8 +7,8 @@ import axios from 'axios';
 export const FileUploader = () => {
   const [progress, setProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
-const [uploadedFile, setUploadedFile] = useState<{ name: string, size: number, type: string, url: string } | null>(null);
-const [abortController, setAbortController] = useState<AbortController | null>(null);
+const [uploadedFile, setUploadedFile] = useState(null);
+const [abortController, setAbortController] = useState(null);
 
 const handleCancel = () => {
   if (abortController) {
@@ -24,9 +24,9 @@ const handleDelete = () => {
   setProgress(0);
 };
 
-const onDrop = useCallback(async (acceptedFiles: File[]) => {
+const onDrop = useCallback(async (acceptedFiles) => {
   const file = acceptedFiles[0];
-  const controller = new AbortController(); // كارييت واحد جديد لكل رفعة
+  const controller = new AbortController(); 
   setAbortController(controller);
   setUploading(true);
 
@@ -48,7 +48,7 @@ const onDrop = useCallback(async (acceptedFiles: File[]) => {
       type: file.type,
       url: URL.createObjectURL(file)
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error.name === 'CanceledError') {
       console.log('Request was canceled');
     } else {
