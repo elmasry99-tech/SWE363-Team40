@@ -5,7 +5,7 @@ CypherNet is a Next.js front-end for a secure multi-tenant communication platfor
 - System Administrator
 - Organization Security Officer
 - Internal Secure End-User
-- Guest User
+- Guest User (Outside User)
 
 This repository currently focuses on front-end behavior and interaction design. It is structured so backend services can be integrated later.
 
