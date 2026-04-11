@@ -1,33 +1,11 @@
-'use client';
-import { useState } from 'react';
-import Login from '../components/Login.jsx';
-import SignUp from '../components/SignUp.jsx';
-import RoleSelection from '../components/RoleSelection.jsx';
-  
+import { AuthGateway } from "@/components/auth/AuthGateway";
+
 export default function AuthPage() {
-  const [selectedRole, setSelectedRole] = useState(null);
-  const [isLogin, setIsLogin] = useState(true);
-
-  // If no role selected, show role selection
-  if (!selectedRole) {
-    return <RoleSelection onRoleSelect={setSelectedRole} />;
-  }
-
   return (
-    <div className="min-h-screen">
-      {isLogin ? (
-        <Login 
-          role={selectedRole}
-          onSwitchToSignUp={() => setIsLogin(false)}
-          onChangeRole={() => setSelectedRole(null)}
-        />
-      ) : (
-        <SignUp 
-          role={selectedRole}
-          onSwitchToLogin={() => setIsLogin(true)}
-          onChangeRole={() => setSelectedRole(null)}
-        />
-      )}
-    </div>
+    <main className="min-h-screen px-6 py-8 sm:px-8 lg:px-10">
+      <div className="mx-auto w-full max-w-7xl">
+        <AuthGateway />
+      </div>
+    </main>
   );
 }
