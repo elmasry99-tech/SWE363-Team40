@@ -121,21 +121,21 @@ export function AuthGateway() {
   }
 
   return (
-    <div className="rounded-[26px] border border-[var(--border-dark)] bg-[rgba(11,24,43,0.82)] shadow-[0_28px_90px_rgba(2,6,23,0.38)] backdrop-blur">
-      <div className="grid min-h-[780px] lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="flex flex-col justify-between bg-[linear-gradient(180deg,#0d1b31,#132741)] p-8 lg:p-10">
+    <div className="overflow-hidden rounded-[22px] border border-[var(--border-dark)] bg-[rgba(11,24,43,0.82)] shadow-[0_28px_90px_rgba(2,6,23,0.38)] backdrop-blur sm:rounded-[26px]">
+      <div className="grid min-h-[calc(100vh-4rem)] lg:min-h-[780px] lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="flex flex-col justify-between bg-[linear-gradient(180deg,#0d1b31,#132741)] p-6 sm:p-8 lg:p-10">
           <div>
             <BrandMark large />
             <div className="mt-6">
-              <p className="text-[34px] font-medium leading-tight text-white">CypherNet</p>
-              <p className="mt-3 max-w-xl text-base leading-8 text-slate-300">
+              <p className="text-[28px] font-medium leading-tight text-white sm:text-[34px]">CypherNet</p>
+              <p className="mt-3 max-w-xl text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
                 Secure communications for organizations that need controlled access,
                 role-based oversight, protected files, and real-time collaboration.
               </p>
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
             {[
               "Platform-wide tenant oversight and security controls",
               "Organization-level policy, compliance, and room monitoring",
@@ -152,8 +152,8 @@ export function AuthGateway() {
           </div>
         </div>
 
-        <div className="bg-[var(--surface-light)] p-6 lg:p-8">
-          <Card className="p-6 lg:p-8">
+        <div className="bg-[var(--surface-light)] p-4 sm:p-6 lg:p-8">
+          <Card className="p-5 sm:p-6 lg:p-8">
             <div className="flex items-center gap-2 text-[var(--text-main)]">
               <Lock className="h-5 w-5 text-[var(--accent-strong)]" />
               <h1 className="text-[24px] font-medium">
@@ -196,7 +196,7 @@ export function AuthGateway() {
                   )}
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium text-[var(--text-main)]">{role.label}</p>
                       <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{role.description}</p>
                     </div>

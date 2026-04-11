@@ -21,17 +21,17 @@ export function AppScaffold({
   const navItems = APP_NAV[role] || [];
 
   return (
-    <div className="rounded-[26px] border border-[var(--border-dark)] bg-[rgba(11,24,43,0.82)] shadow-[0_28px_90px_rgba(2,6,23,0.38)] backdrop-blur">
-      <div className="border-b border-[var(--border-dark)] px-6 py-5">
+    <div className="overflow-hidden rounded-[22px] border border-[var(--border-dark)] bg-[rgba(11,24,43,0.82)] shadow-[0_28px_90px_rgba(2,6,23,0.38)] backdrop-blur sm:rounded-[26px]">
+      <div className="border-b border-[var(--border-dark)] px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <BrandMark />
-            <div>
-              <p className="text-[20px] font-medium text-white">{title}</p>
-              <p className="text-sm text-slate-300">{subtitle || ROLE_LABELS[role]}</p>
+            <div className="min-w-0">
+              <p className="truncate text-[18px] font-medium text-white sm:text-[20px]">{title}</p>
+              <p className="truncate text-sm text-slate-300">{subtitle || ROLE_LABELS[role]}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             {actions}
             <button
               type="button"
@@ -49,7 +49,7 @@ export function AppScaffold({
       </div>
 
       <div className="border-b border-[var(--border-dark)] px-4 py-3 lg:hidden">
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -67,7 +67,7 @@ export function AppScaffold({
         </div>
       </div>
 
-      <div className="grid min-h-[760px] lg:grid-cols-[260px_1fr]">
+      <div className="grid min-h-[calc(100vh-14rem)] lg:min-h-[760px] lg:grid-cols-[260px_1fr]">
         <aside className="hidden border-r border-[var(--border-dark)] p-4 lg:block">
           <div className="space-y-1">
             {navItems.map((item) => (
@@ -87,7 +87,7 @@ export function AppScaffold({
           </div>
         </aside>
 
-        <div className="bg-[var(--surface-light)] p-6">{children}</div>
+        <div className="bg-[var(--surface-light)] p-4 sm:p-6">{children}</div>
       </div>
     </div>
   );

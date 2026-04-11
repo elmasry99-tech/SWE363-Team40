@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/Button";
 export function ChatPanel({ messages, draft, onDraftChange, onSend }) {
   return (
     <Card className="flex h-full flex-col p-6">
-      <div className="flex-1 space-y-4">
+      <div className="flex-1 space-y-4 overflow-x-hidden">
         {messages.map((message) => (
-          <div key={message.id} className="max-w-[460px]">
+          <div key={message.id} className="max-w-full sm:max-w-[460px]">
             <p className="mb-1 px-3 text-xs text-[var(--text-soft)]">{message.author}</p>
             <div className="rounded-[18px] border border-[var(--border-light)] bg-white px-4 py-3 text-sm leading-6 text-[var(--text-main)] shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
               <p>{message.body}</p>
@@ -22,7 +22,7 @@ export function ChatPanel({ messages, draft, onDraftChange, onSend }) {
                       alt={message.fileName}
                       width={320}
                       height={220}
-                      className="max-h-[220px] rounded-[16px] border border-[var(--border-light)] object-cover"
+                      className="h-auto max-h-[220px] w-full rounded-[16px] border border-[var(--border-light)] object-cover"
                     />
                   ) : null}
                   <div className="flex flex-wrap items-center gap-3">

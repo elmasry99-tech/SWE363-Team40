@@ -120,7 +120,7 @@ export function CallPanel({ onLeave }) {
   }
 
   return (
-    <div className="bg-[linear-gradient(180deg,#1a2c43,#13243b)] p-4 text-white">
+    <div className="bg-[linear-gradient(180deg,#1a2c43,#13243b)] p-3 text-white sm:p-4">
       <div className="mb-4 flex items-center justify-between text-sm text-slate-300">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
@@ -130,14 +130,14 @@ export function CallPanel({ onLeave }) {
       </div>
 
       <div className="rounded-[22px] bg-[linear-gradient(180deg,#6a87ab,#516a8c)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
-        <div className="flex min-h-[320px] items-center justify-center">
+        <div className="flex min-h-[220px] items-center justify-center sm:min-h-[320px]">
           {previewStream ? (
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="h-[320px] w-full rounded-[18px] object-cover"
+              className="h-[220px] w-full rounded-[18px] object-cover sm:h-[320px]"
             />
           ) : (
             <div className="text-center">
@@ -153,11 +153,11 @@ export function CallPanel({ onLeave }) {
 
       <div className="mt-4 rounded-[20px] bg-[rgba(255,255,255,0.08)] px-4 py-4 backdrop-blur sm:px-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={handleToggleMic}
-              className={`flex h-[52px] w-[52px] items-center justify-center rounded-full ${
+              className={`flex h-12 w-12 items-center justify-center rounded-full sm:h-[52px] sm:w-[52px] ${
                 muted ? "bg-[rgba(217,101,112,0.24)] text-[#f5a3ae]" : "bg-[rgba(60,195,214,0.2)] text-[var(--accent)]"
               }`}
             >
@@ -166,7 +166,7 @@ export function CallPanel({ onLeave }) {
             <button
               type="button"
               onClick={handleToggleCamera}
-              className={`flex h-[52px] w-[52px] items-center justify-center rounded-full ${
+              className={`flex h-12 w-12 items-center justify-center rounded-full sm:h-[52px] sm:w-[52px] ${
                 cameraOn ? "bg-[rgba(60,195,214,0.2)] text-[var(--accent)]" : "bg-[rgba(217,101,112,0.24)] text-[#f5a3ae]"
               }`}
             >
@@ -175,7 +175,7 @@ export function CallPanel({ onLeave }) {
             <button
               type="button"
               onClick={handleToggleScreenShare}
-              className={`flex h-[52px] w-[52px] items-center justify-center rounded-full ${
+              className={`flex h-12 w-12 items-center justify-center rounded-full sm:h-[52px] sm:w-[52px] ${
                 sharing ? "bg-[rgba(60,195,214,0.2)] text-[var(--accent)]" : "bg-[rgba(217,101,112,0.24)] text-[#f5a3ae]"
               }`}
             >
@@ -184,7 +184,7 @@ export function CallPanel({ onLeave }) {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-[rgba(7,17,31,0.26)] px-4 py-3 text-sm text-slate-200">
+        <div className="flex flex-col gap-3 rounded-[16px] bg-[rgba(7,17,31,0.26)] px-4 py-3 text-sm text-slate-200 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-4">
             <span>{muted ? "Microphone off" : "Microphone live"}</span>
             <span>{cameraOn ? "Camera on" : "Camera off"}</span>

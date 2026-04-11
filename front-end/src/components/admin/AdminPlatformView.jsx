@@ -32,7 +32,7 @@ export function AdminPlatformView({ pathname }) {
       subtitle="System Administrator"
       pathname={pathname}
       onLogout={signOut}
-      actions={<div className="hidden rounded-[14px] bg-[rgba(60,195,214,0.12)] px-4 py-2 text-sm text-[var(--accent)] sm:block">Platform status stable</div>}
+      actions={<div className="hidden rounded-[14px] bg-[rgba(60,195,214,0.12)] px-4 py-2 text-sm text-[var(--accent)] md:block">Platform status stable</div>}
     >
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>

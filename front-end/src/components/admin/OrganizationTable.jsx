@@ -7,8 +7,8 @@ import { getAdminPlatformEditRoute } from "@/lib/routes";
 export function OrganizationTable({ rows, onToggle }) {
   return (
     <Card className="p-4">
-      <div className="overflow-hidden rounded-[18px] border border-[var(--border-light)]">
-        <table className="w-full">
+      <div className="overflow-x-auto rounded-[18px] border border-[var(--border-light)]">
+        <table className="min-w-[760px] w-full">
           <thead className="bg-slate-50">
             <tr className="text-left text-xs uppercase tracking-[0.08em] text-[var(--text-soft)]">
               <th className="px-6 py-4">Organization</th>
