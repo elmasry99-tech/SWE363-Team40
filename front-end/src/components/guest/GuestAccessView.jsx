@@ -79,7 +79,12 @@ export function GuestAccessView({ pathname }) {
               Status: Pending Host Approval
             </div>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <Button onClick={() => setGuestStep("admitted")}>Enter When Approved</Button>
+              <Button
+                onClick={() => setGuestStep("admitted")}
+                disabled={state.admittedGuestRooms.length === 0}
+              >
+                {state.admittedGuestRooms.length > 0 ? "Enter Room" : "Waiting for Host..."}
+              </Button>
               <Button variant="secondary" onClick={() => setGuestStep("verify")}>
                 Edit Details
               </Button>

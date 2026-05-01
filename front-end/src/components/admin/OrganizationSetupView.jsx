@@ -47,7 +47,6 @@ export function OrganizationSetupView({ pathname }) {
         email: form.officerEmail,
         role: "Organization Security Officer",
         organization: form.name,
-        password: form.officerPassword,
       },
     );
 

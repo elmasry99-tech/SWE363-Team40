@@ -14,6 +14,11 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'name, email, password, and role are required' });
     }
 
+    const ALLOWED_SIGNUP_ROLES = ['internal', 'guest', 'general'];
+    if (!ALLOWED_SIGNUP_ROLES.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role. Allowed values: internal, guest, general' });
+    }
+
     const passwordRegex = /^(?=.*[A-Z])(?=.*[^a-zA-Z0-9]).{8,}$/;
     if (!passwordRegex.test(password)) {
       return res.status(400).json({

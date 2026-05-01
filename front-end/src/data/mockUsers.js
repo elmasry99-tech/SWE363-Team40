@@ -22,6 +22,11 @@ export const mockUsers = {
     role: "guest",
     inviteCode: "CN-INTAKE-2048",
   },
+  general: {
+    name: "General User",
+    email: "user@cyphernet.sa",
+    role: "general",
+  },
 };
 
 export const officerUsers = [

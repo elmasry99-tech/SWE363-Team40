@@ -32,7 +32,7 @@ export function RoomsList({ pathname }) {
 
   return (
     <AppScaffold
-      role="internal"
+      role={state.role}
       title="Secure Rooms"
       subtitle="Internal Secure End-User"
       pathname={pathname}

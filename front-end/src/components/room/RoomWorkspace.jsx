@@ -39,7 +39,7 @@ export function RoomWorkspace({ pathname, roomId }) {
 
   return (
     <AppScaffold
-      role="internal"
+      role={state.role}
       title={room.name}
       subtitle={room.kind}
       pathname={pathname}

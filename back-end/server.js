@@ -12,6 +12,7 @@ import fs from 'fs';
 import { connectDB } from './db.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
+import { requireAuth } from './middleware/auth.js';
 
 // --- Y: import your route/realtime modules here when ready ---
 // import roomRoutes    from './routes/rooms.js';
@@ -33,12 +34,29 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 await connectDB();
 
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',');
+
 let app = express();
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const upload = multer({ dest: 'uploads/' });
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf',
+  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+
+const upload = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, ALLOWED_MIME_TYPES.includes(file.mimetype));
+  },
+});
 
 if (ENVIRONMENT === 'dev') app.use(morgan('dev'));
 app.use(serveStatic(path.resolve(__dirname, 'public')));
@@ -55,8 +73,8 @@ app.use('/users', userRoutes);
 
 app.get('/health-check', (_req, res) => res.status(200).send('OK'));
 
-app.post('/upload', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).send('No file uploaded.');
+app.post('/upload', requireAuth, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded or file type not allowed.' });
   console.log(`[CipherNet] File received: ${req.file.originalname}`);
   res.status(200).json({ message: 'File received successfully!', filename: req.file.filename });
 });
