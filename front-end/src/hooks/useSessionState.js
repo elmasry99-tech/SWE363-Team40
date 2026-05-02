@@ -1,500 +1,246 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { baseMessages } from "@/data/mockMessages";
-import { mockRooms } from "@/data/mockRooms";
-import { mockUsers, officerUsers, pendingEmployeeRequests } from "@/data/mockUsers";
-import { organizationRows } from "@/features/policies";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { generateKeyPair } from "@/lib/crypto";
+import { readJsonResponse } from "@/lib/api";
+import { closeSocketClient } from "@/lib/socket";
 import { SESSION_STORAGE_KEY } from "@/lib/constants";
 
-const defaultProfiles = {
-  admin: { ...mockUsers.admin },
-  oso: { ...mockUsers.oso },
-  internal: { ...mockUsers.internal },
-  guest: { ...mockUsers.guest },
-};
-
 const defaultState = {
-  role: null,
-  roomId: "client-intake-jones",
+  hydrated: false,
+  token: null,
+  user: null,
+  signupPendingRole: null,
+  roomId: null,
   roomLocked: false,
   callView: "chat",
   guestStep: "verify",
-  signupPendingRole: null,
   officerSection: "Policies",
-  profiles: defaultProfiles,
-  organizations: organizationRows,
-  officerManagedUsers: officerUsers,
-  employeeJoinRequests: pendingEmployeeRequests,
-  policySettings: {
-    "File Sharing": true,
-    "Screen Sharing": false,
-    "External Access": true,
-    "Guest Verification": true,
-  },
-  retentionSettings: {
-    "Message Retention": 30,
-    "Session Expiration": 7,
-  },
-  messageRateLimit: 5000,
-  adminAuditLogs: [
-    { id: "log1", time: "2026-04-11 09:12", message: "Finance Plus status changed to suspended." },
-    { id: "log2", time: "2026-04-11 08:46", message: "Northstar Legal officer account provisioned." },
-    { id: "log3", time: "2026-04-11 08:15", message: "Global guest verification baseline confirmed." },
-  ],
-  customRooms: [],
-  customOfficerAccounts: [],
-  admittedGuestRooms: [],
-  closedRoomIds: [],
-  uploads: {},
-  messagesByRoom: baseMessages,
 };
 
+let store = { ...defaultState };
+let initialized = false;
+let keypairPromise = null;
+const listeners = new Set();
+
+function emitChange() {
+  listeners.forEach((listener) => listener());
+}
+
+function writeStore(nextState) {
+  store = nextState;
+  emitChange();
+}
+
+function persistStore() {
+  if (typeof window === "undefined") return;
+
+  const payload = {
+    token: store.token,
+    user: store.user,
+    signupPendingRole: store.signupPendingRole,
+    roomId: store.roomId,
+    roomLocked: store.roomLocked,
+    callView: store.callView,
+    guestStep: store.guestStep,
+    officerSection: store.officerSection,
+  };
+
+  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function initializeStore() {
+  if (initialized || typeof window === "undefined") return;
+
+  initialized = true;
+
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      store = {
+        ...defaultState,
+        ...parsed,
+        hydrated: true,
+      };
+      return;
+    }
+  } catch {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  }
+
+  store = {
+    ...defaultState,
+    hydrated: true,
+  };
+}
+
+function updateStore(patch) {
+  const nextState = {
+    ...store,
+    ...(typeof patch === "function" ? patch(store) : patch),
+  };
+  writeStore(nextState);
+  persistStore();
+}
+
+function clearStore() {
+  store = {
+    ...defaultState,
+    hydrated: true,
+  };
+
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  }
+
+  closeSocketClient();
+  emitChange();
+}
+
+async function request(path, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+
+  if (!isFormData && !headers.has("Content-Type") && options.body !== undefined) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (store.token) {
+    headers.set("Authorization", `Bearer ${store.token}`);
+  }
+
+  const response = await fetch(path, {
+    ...options,
+    headers,
+  });
+
+  if (response.status === 401) {
+    clearStore();
+  }
+
+  return response;
+}
+
+async function ensureStegKeys() {
+  if (typeof window === "undefined" || !store.token) return;
+  if (window.localStorage.getItem("cyphernet.privateKey")) return;
+  if (!keypairPromise) {
+    keypairPromise = generateKeyPair().catch((error) => {
+      keypairPromise = null;
+      throw error;
+    });
+  }
+  await keypairPromise;
+}
+
 export function useSessionState() {
-  const [state, setState] = useState(defaultState);
-  const [hydrated, setHydrated] = useState(false);
+  const state = useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => store,
+    () => defaultState,
+  );
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setState({
-          ...defaultState,
-          ...parsed,
-          profiles: parsed.profiles || defaultProfiles,
-          organizations: parsed.organizations || organizationRows,
-          officerManagedUsers: parsed.officerManagedUsers || officerUsers,
-          employeeJoinRequests: parsed.employeeJoinRequests || pendingEmployeeRequests,
-          policySettings: parsed.policySettings || defaultState.policySettings,
-          retentionSettings: parsed.retentionSettings || defaultState.retentionSettings,
-          messageRateLimit: parsed.messageRateLimit || defaultState.messageRateLimit,
-          adminAuditLogs: parsed.adminAuditLogs || defaultState.adminAuditLogs,
-          messagesByRoom: {
-            ...baseMessages,
-            ...(parsed.messagesByRoom || {}),
-          },
-        });
-      }
-    } finally {
-      setHydrated(true);
-    }
+    initializeStore();
+    emitChange();
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
-    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(state));
-  }, [hydrated, state]);
+    if (!state.hydrated || !state.token) return;
+    ensureStegKeys().catch(() => {});
+  }, [state.hydrated, state.token]);
 
-  const sessionUser = useMemo(() => {
-    if (!state.role) return null;
-    return state.profiles[state.role] || mockUsers[state.role];
-  }, [state.profiles, state.role]);
+  const actions = useMemo(() => ({
+    async login(credentials) {
+      const response = await request("/auth/login", {
+        method: "POST",
+        body: JSON.stringify(credentials),
+      });
+      const data = await readJsonResponse(response);
 
-  function update(patch) {
-    setState((current) => ({ ...current, ...patch }));
-  }
+      updateStore({
+        token: data.token,
+        user: data.user,
+        signupPendingRole: null,
+        roomId: null,
+      });
 
-  function getTimestamp() {
-    const now = new Date();
-    return now.toISOString().slice(0, 16).replace("T", " ");
-  }
+      return data;
+    },
 
-  function appendAuditLog(message) {
-    return {
-      id: `log-${Date.now()}`,
-      time: getTimestamp(),
-      message,
-    };
-  }
+    async signup(payload) {
+      const response = await request("/auth/signup", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const data = await readJsonResponse(response);
+      updateStore({ signupPendingRole: payload.role });
+      return data;
+    },
 
-  function signIn(role) {
-    const nextState = {
-      ...state,
-      role,
-      roomId: state.roomId || "client-intake-jones",
-      signupPendingRole: null,
-    };
-    setState(nextState);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(nextState));
-    }
-  }
+    async request(path, options = {}) {
+      const response = await request(path, options);
+      return readJsonResponse(response);
+    },
 
-  function signOut() {
-    setState(defaultState);
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY);
-    }
-  }
+    async requestBlob(path, options = {}) {
+      const response = await request(path, options);
+      if (!response.ok) {
+        const data = await readJsonResponse(response);
+        throw new Error(data.error || "Request failed");
+      }
+      return response.blob();
+    },
 
-  function setOfficerSection(section) {
-    update({ officerSection: section });
-  }
+    signIn(session) {
+      updateStore({
+        token: session.token,
+        user: session.user,
+        signupPendingRole: null,
+      });
+    },
 
-  function setRoom(roomId) {
-    update({ roomId });
-  }
+    signOut() {
+      clearStore();
+    },
 
-  function toggleRoomLock() {
-    setState((current) => ({ ...current, roomLocked: !current.roomLocked }));
-  }
+    setOfficerSection(officerSection) {
+      updateStore({ officerSection });
+    },
 
-  function setCallView(callView) {
-    update({ callView });
-  }
+    setRoom(roomId) {
+      updateStore({ roomId });
+    },
 
-  function setGuestStep(guestStep) {
-    update({ guestStep });
-  }
+    toggleRoomLock() {
+      updateStore((current) => ({ roomLocked: !current.roomLocked }));
+    },
 
-  function setSignupPendingRole(signupPendingRole) {
-    update({ signupPendingRole });
-  }
+    setCallView(callView) {
+      updateStore({ callView });
+    },
 
-  function toggleOrganizationStatus(name) {
-    setState((current) => ({
-      ...current,
-      organizations: current.organizations.map((organization) =>
-        organization.name === name
-          ? {
-              ...organization,
-              status: organization.status === "suspended" ? "active" : "suspended",
-            }
-          : organization,
-      ),
-      adminAuditLogs: [
-        appendAuditLog(
-          `${name} status changed to ${
-            current.organizations.find((organization) => organization.name === name)?.status === "suspended"
-              ? "active"
-              : "suspended"
-          }.`,
-        ),
-        ...current.adminAuditLogs,
-      ],
-    }));
-  }
+    setGuestStep(guestStep) {
+      updateStore({ guestStep });
+    },
 
-  function createRoom() {
-    const roomNumber = state.customRooms.length + 4;
-    const roomCode = `CN-${String(Math.floor(1000 + Math.random() * 9000))}`;
-    const roomName = `Secure Room ${roomNumber}`;
-    const room = {
-      id: `secure-room-${Date.now()}`,
-      name: roomName,
-      kind: "Ad hoc secure workspace",
-      roomCode,
-      unread: 0,
-      participants: [
-        { name: "You", state: "Present" },
-        { name: "Assigned Guest", state: "Waiting" },
-      ],
-    };
-
-    setState((current) => ({
-      ...current,
-      roomId: room.id,
-      customRooms: [room, ...current.customRooms],
-      messagesByRoom: {
-        ...current.messagesByRoom,
-        [room.id]: [
-          {
-            id: Date.now(),
-            author: "CypherNet",
-            body: `Room created. Share code ${roomCode} to let approved participants join this secure session.`,
-            time: "Now",
-          },
-        ],
-      },
-    }));
-
-    return room.id;
-  }
-
-  function createRoomWithDetails(details) {
-    const roomCode = `CN-${String(Math.floor(1000 + Math.random() * 9000))}`;
-    const room = {
-      id: `secure-room-${Date.now()}`,
-      name: details.name.trim(),
-      kind: details.kind.trim() || "Ad hoc secure workspace",
-      roomCode,
-      unread: 0,
-      participants: [
-        { name: "You", state: "Present" },
-        ...(details.allowGuest ? [{ name: "Waiting Guest", state: "Waiting" }] : []),
-      ],
-    };
-
-    setState((current) => ({
-      ...current,
-      roomId: room.id,
-      customRooms: [room, ...current.customRooms],
-      messagesByRoom: {
-        ...current.messagesByRoom,
-        [room.id]: [
-          {
-            id: Date.now(),
-            author: "CypherNet",
-            body: `Room created. Share code ${roomCode} to let approved participants join this secure session.`,
-            time: "Now",
-          },
-        ],
-      },
-    }));
-
-    return room;
-  }
-
-  function joinRoomByCode(code) {
-    const normalizedCode = code.trim().toUpperCase();
-    const allRooms = [...state.customRooms, ...mockRooms];
-    const room = allRooms.find((entry) => entry.roomCode?.toUpperCase() === normalizedCode);
-    if (!room) return null;
-    setState((current) => ({ ...current, roomId: room.id }));
-    return room;
-  }
-
-  function createOrganization(organization, officerAccount) {
-    setState((current) => ({
-      ...current,
-      organizations: organization ? [organization, ...current.organizations] : current.organizations,
-      customOfficerAccounts: officerAccount
-        ? [officerAccount, ...current.customOfficerAccounts]
-        : current.customOfficerAccounts,
-      adminAuditLogs: organization
-        ? [
-            appendAuditLog(`Organization ${organization.name} created and default officer account provisioned.`),
-            ...current.adminAuditLogs,
-          ]
-        : current.adminAuditLogs,
-    }));
-  }
-
-  function updateOrganizationBySlug(orgSlug, updates) {
-    setState((current) => ({
-      ...current,
-      organizations: current.organizations.map((organization) =>
-        organization.slug === orgSlug ? { ...organization, ...updates } : organization,
-      ),
-      adminAuditLogs: [
-        appendAuditLog(`Organization ${updates.name || orgSlug} details updated.`),
-        ...current.adminAuditLogs,
-      ],
-    }));
-  }
-
-  function toggleOfficerUserStatus(userId) {
-    setState((current) => ({
-      ...current,
-      officerManagedUsers: current.officerManagedUsers.map((user) =>
-        user.id === userId
-          ? {
-              ...user,
-              accountStatus: user.accountStatus === "disabled" ? "active" : "disabled",
-            }
-          : user,
-      ),
-    }));
-  }
-
-  function approveEmployeeRequest(requestId) {
-    setState((current) => {
-      const request = current.employeeJoinRequests.find((entry) => entry.id === requestId);
-      if (!request) return current;
-
-      return {
-        ...current,
-        employeeJoinRequests: current.employeeJoinRequests.filter((entry) => entry.id !== requestId),
-        officerManagedUsers: [
-          {
-            id: `u-${Date.now()}`,
-            name: request.name,
-            email: request.email,
-            role: request.requestedTitle,
-            organization: request.organization,
-            state: "Active",
-            accountStatus: "active",
-          },
-          ...current.officerManagedUsers,
-        ],
-      };
-    });
-  }
-
-  function denyEmployeeRequest(requestId) {
-    setState((current) => ({
-      ...current,
-      employeeJoinRequests: current.employeeJoinRequests.filter((entry) => entry.id !== requestId),
-    }));
-  }
-
-  function addPendingAccountRequest(request) {
-    setState((current) => ({
-      ...current,
-      employeeJoinRequests: [
-        {
-          id: `req-${Date.now()}`,
-          ...request,
-          requestedAt: getTimestamp().slice(11),
-        },
-        ...current.employeeJoinRequests,
-      ],
-    }));
-  }
-
-  function updateProfile(role, updates) {
-    setState((current) => ({
-      ...current,
-      profiles: {
-        ...current.profiles,
-        [role]: {
-          ...current.profiles[role],
-          ...updates,
-        },
-      },
-    }));
-  }
-
-  function togglePolicySetting(policyName) {
-    setState((current) => ({
-      ...current,
-      policySettings: {
-        ...current.policySettings,
-        [policyName]: !current.policySettings[policyName],
-      },
-    }));
-  }
-
-  function updateRetentionSetting(settingTitle, value) {
-    const parsedValue = Number(value);
-    setState((current) => ({
-      ...current,
-      retentionSettings: {
-        ...current.retentionSettings,
-        [settingTitle]: Number.isNaN(parsedValue) ? current.retentionSettings[settingTitle] : parsedValue,
-      },
-    }));
-  }
-
-  function setMessageRateLimit(value) {
-    const parsedValue = Number(value);
-    if (Number.isNaN(parsedValue)) return;
-
-    setState((current) => ({
-      ...current,
-      messageRateLimit: parsedValue,
-      adminAuditLogs: [
-        appendAuditLog(`Global monthly message rate limit set to ${parsedValue}.`),
-        ...current.adminAuditLogs,
-      ],
-    }));
-  }
-
-  function admitGuest(roomId) {
-    setState((current) => ({
-      ...current,
-      admittedGuestRooms: current.admittedGuestRooms.includes(roomId)
-        ? current.admittedGuestRooms
-        : [...current.admittedGuestRooms, roomId],
-    }));
-  }
-
-  function toggleRoomClosed(roomId) {
-    setState((current) => ({
-      ...current,
-      closedRoomIds: current.closedRoomIds.includes(roomId)
-        ? current.closedRoomIds.filter((id) => id !== roomId)
-        : [...current.closedRoomIds, roomId],
-    }));
-  }
-
-  function sendMessage(roomId, body) {
-    const trimmed = body.trim();
-    if (!trimmed) return;
-    setState((current) => ({
-      ...current,
-      messagesByRoom: {
-        ...current.messagesByRoom,
-        [roomId]: [
-          ...(current.messagesByRoom[roomId] || []),
-          { id: Date.now(), author: "You", body: trimmed, time: "Now" },
-        ],
-      },
-    }));
-  }
-
-  function addUpload(roomId, fileData) {
-    setState((current) => ({
-      ...current,
-      uploads: {
-        ...current.uploads,
-        [roomId]: fileData,
-      },
-    }));
-  }
-
-  function sendUploadAsMessage(roomId) {
-    setState((current) => {
-      const fileData = current.uploads[roomId];
-      if (!fileData) return current;
-
-      return {
-        ...current,
-        uploads: {
-          ...current.uploads,
-          [roomId]: null,
-        },
-        messagesByRoom: {
-          ...current.messagesByRoom,
-          [roomId]: [
-            ...(current.messagesByRoom[roomId] || []),
-            {
-              id: Date.now(),
-              author: "You",
-              body: "Shared a secure attachment",
-              fileName: fileData.name,
-              fileType: fileData.type,
-              filePreview: fileData.preview,
-              kind: "file",
-              time: "Now",
-            },
-          ],
-        },
-      };
-    });
-  }
+    setSignupPendingRole(signupPendingRole) {
+      updateStore({ signupPendingRole });
+    },
+  }), []);
 
   return {
-    hydrated,
-    sessionUser,
-    state,
-    signIn,
-    signOut,
-    setOfficerSection,
-    setRoom,
-    toggleRoomLock,
-    setCallView,
-    setGuestStep,
-    setSignupPendingRole,
-    toggleOrganizationStatus,
-    createRoom,
-    createRoomWithDetails,
-    joinRoomByCode,
-    createOrganization,
-    updateOrganizationBySlug,
-    toggleOfficerUserStatus,
-    approveEmployeeRequest,
-    denyEmployeeRequest,
-    addPendingAccountRequest,
-    togglePolicySetting,
-    updateRetentionSetting,
-    setMessageRateLimit,
-    updateProfile,
-    admitGuest,
-    toggleRoomClosed,
-    sendMessage,
-    addUpload,
-    sendUploadAsMessage,
+    hydrated: state.hydrated,
+    sessionUser: state.user,
+    state: {
+      ...state,
+      role: state.user?.role || null,
+      isAuthenticated: Boolean(state.token),
+    },
+    ...actions,
   };
 }

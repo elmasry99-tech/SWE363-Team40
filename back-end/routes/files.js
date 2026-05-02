@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import File from '../models/File.js';
 import Room from '../models/Room.js';
 import { requireAuth } from '../middleware/auth.js';
+import { isValidObjectId } from '../lib/validation.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -38,7 +39,7 @@ async function canUseRoom(user, roomId) {
 router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
   try {
     const { roomId } = req.body;
-    if (!roomId) return res.status(400).json({ error: 'roomId is required' });
+    if (!isValidObjectId(roomId)) return res.status(400).json({ error: 'A valid roomId is required' });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded or file type not allowed.' });
 
     const allowed = await canUseRoom(req.user, roomId);
@@ -62,6 +63,7 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
 
 router.get('/:id', requireAuth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid file id' });
     const file = await File.findById(req.params.id);
     if (!file) return res.status(404).json({ error: 'File not found' });
 

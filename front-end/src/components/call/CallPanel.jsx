@@ -1,123 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { Mic, Monitor, PhoneOff, Video } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/StatusPill";
+import { VideoTile } from "@/components/call/VideoTile";
+import { useSessionState } from "@/hooks/useSessionState";
+import { useWebRTC } from "@/hooks/useWebRTC";
 
-export function CallPanel({ onLeave }) {
-  const videoRef = useRef(null);
-  const cameraStreamRef = useRef(null);
-  const micStreamRef = useRef(null);
-  const screenStreamRef = useRef(null);
-  const [muted, setMuted] = useState(true);
-  const [cameraOn, setCameraOn] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const [previewStream, setPreviewStream] = useState(null);
-  const [mediaError, setMediaError] = useState("");
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = previewStream;
-    }
-  }, [previewStream]);
-
-  function stopTracks(stream) {
-    stream?.getTracks().forEach((track) => track.stop());
-  }
-
-  function stopAllMedia() {
-    stopTracks(cameraStreamRef.current);
-    stopTracks(micStreamRef.current);
-    stopTracks(screenStreamRef.current);
-    cameraStreamRef.current = null;
-    micStreamRef.current = null;
-    screenStreamRef.current = null;
-    setPreviewStream(null);
-    setMuted(true);
-    setCameraOn(false);
-    setSharing(false);
-  }
-
-  useEffect(() => {
-    return () => {
-      stopTracks(cameraStreamRef.current);
-      stopTracks(micStreamRef.current);
-      stopTracks(screenStreamRef.current);
-    };
-  }, []);
-
-  async function handleToggleMic() {
-    if (!muted) {
-      stopTracks(micStreamRef.current);
-      micStreamRef.current = null;
-      setMuted(true);
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      micStreamRef.current = stream;
-      setMuted(false);
-      setMediaError("");
-    } catch {
-      setMediaError("Microphone access was blocked by the browser.");
-    }
-  }
-
-  async function handleToggleCamera() {
-    if (cameraOn) {
-      stopTracks(cameraStreamRef.current);
-      cameraStreamRef.current = null;
-      setCameraOn(false);
-      if (!screenStreamRef.current) {
-        setPreviewStream(null);
-      }
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      cameraStreamRef.current = stream;
-      setCameraOn(true);
-      if (!screenStreamRef.current) {
-        setPreviewStream(stream);
-      }
-      setMediaError("");
-    } catch {
-      setMediaError("Camera access was blocked by the browser.");
-    }
-  }
-
-  async function handleToggleScreenShare() {
-    if (sharing) {
-      stopTracks(screenStreamRef.current);
-      screenStreamRef.current = null;
-      setSharing(false);
-      setPreviewStream(cameraStreamRef.current);
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      screenStreamRef.current = stream;
-      setSharing(true);
-      setPreviewStream(stream);
-      setMediaError("");
-
-      const [track] = stream.getVideoTracks();
-      if (track) {
-        track.addEventListener("ended", () => {
-          stopTracks(screenStreamRef.current);
-          screenStreamRef.current = null;
-          setSharing(false);
-          setPreviewStream(cameraStreamRef.current);
-        });
-      }
-    } catch {
-      setMediaError("Screen sharing was cancelled or blocked.");
-    }
-  }
+export function CallPanel({ roomId, participants, onLeave }) {
+  const { state } = useSessionState();
+  const {
+    localStream,
+    remoteStreams,
+    muted,
+    cameraOn,
+    sharing,
+    mediaError,
+    toggleMic,
+    toggleCamera,
+    toggleScreenShare,
+    leaveCall,
+  } = useWebRTC({
+    token: state.token,
+    roomId,
+    currentUserId: state.user?.id,
+    participants,
+  });
 
   return (
     <div className="bg-[linear-gradient(180deg,#1a2c43,#13243b)] p-3 text-white sm:p-4">
@@ -126,62 +34,56 @@ export function CallPanel({ onLeave }) {
           <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
           <span>Live Secure Call</span>
         </div>
-        <StatusPill tone="accent">3 Participants</StatusPill>
+        <StatusPill tone="accent">{participants.length} Participants</StatusPill>
       </div>
 
-      <div className="rounded-[22px] bg-[linear-gradient(180deg,#6a87ab,#516a8c)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
-        <div className="flex min-h-[220px] items-center justify-center sm:min-h-[320px]">
-          {previewStream ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="h-[220px] w-full rounded-[18px] object-cover sm:h-[320px]"
-            />
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <VideoTile
+          label={`${state.user?.name || "You"} (You)`}
+          stream={localStream}
+          muted
+          priority
+        />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+          {remoteStreams.length ? (
+            remoteStreams.map((entry) => (
+              <VideoTile key={entry.userId} label={entry.name} stream={entry.stream} />
+            ))
           ) : (
-            <div className="text-center">
-              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-[rgba(7,17,31,0.36)] text-[30px]">
-                JD
-              </div>
-              <p className="mt-4 text-[18px] font-medium">John Doe (Host)</p>
-              <p className="text-sm text-white/75">Camera and screen share are currently off.</p>
-            </div>
+            <VideoTile label="Waiting for participants" stream={null} />
           )}
         </div>
       </div>
 
       <div className="mt-4 rounded-[20px] bg-[rgba(255,255,255,0.08)] px-4 py-4 backdrop-blur sm:px-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={handleToggleMic}
-              className={`flex h-12 w-12 items-center justify-center rounded-full sm:h-[52px] sm:w-[52px] ${
-                muted ? "bg-[rgba(217,101,112,0.24)] text-[#f5a3ae]" : "bg-[rgba(60,195,214,0.2)] text-[var(--accent)]"
-              }`}
-            >
-              <Mic className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              onClick={handleToggleCamera}
-              className={`flex h-12 w-12 items-center justify-center rounded-full sm:h-[52px] sm:w-[52px] ${
-                cameraOn ? "bg-[rgba(60,195,214,0.2)] text-[var(--accent)]" : "bg-[rgba(217,101,112,0.24)] text-[#f5a3ae]"
-              }`}
-            >
-              <Video className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              onClick={handleToggleScreenShare}
-              className={`flex h-12 w-12 items-center justify-center rounded-full sm:h-[52px] sm:w-[52px] ${
-                sharing ? "bg-[rgba(60,195,214,0.2)] text-[var(--accent)]" : "bg-[rgba(217,101,112,0.24)] text-[#f5a3ae]"
-              }`}
-            >
-              <Monitor className="h-5 w-5" />
-            </button>
-          </div>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => toggleMic()}
+            className={`flex h-12 w-12 items-center justify-center rounded-full sm:h-[52px] sm:w-[52px] ${
+              muted ? "bg-[rgba(217,101,112,0.24)] text-[#f5a3ae]" : "bg-[rgba(60,195,214,0.2)] text-[var(--accent)]"
+            }`}
+          >
+            <Mic className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleCamera()}
+            className={`flex h-12 w-12 items-center justify-center rounded-full sm:h-[52px] sm:w-[52px] ${
+              cameraOn ? "bg-[rgba(60,195,214,0.2)] text-[var(--accent)]" : "bg-[rgba(217,101,112,0.24)] text-[#f5a3ae]"
+            }`}
+          >
+            <Video className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleScreenShare()}
+            className={`flex h-12 w-12 items-center justify-center rounded-full sm:h-[52px] sm:w-[52px] ${
+              sharing ? "bg-[rgba(60,195,214,0.2)] text-[var(--accent)]" : "bg-[rgba(217,101,112,0.24)] text-[#f5a3ae]"
+            }`}
+          >
+            <Monitor className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="flex flex-col gap-3 rounded-[16px] bg-[rgba(7,17,31,0.26)] px-4 py-3 text-sm text-slate-200 sm:flex-row sm:items-center sm:justify-between">
@@ -195,7 +97,7 @@ export function CallPanel({ onLeave }) {
             variant="danger"
             className="flex h-12 items-center gap-2 px-6"
             onClick={() => {
-              stopAllMedia();
+              leaveCall();
               onLeave?.();
             }}
           >

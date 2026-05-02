@@ -7,7 +7,7 @@ import { useRoleRedirect } from "@/hooks/useRoleRedirect";
 export default function RoomPage() {
   const params = useParams();
   const pathname = usePathname();
-  const { hydrated } = useRoleRedirect(["internal"]);
+  const { hydrated } = useRoleRedirect(["internal", "general"]);
   const roomId = Array.isArray(params?.roomId) ? params.roomId[0] : params?.roomId;
 
   if (!hydrated) return null;

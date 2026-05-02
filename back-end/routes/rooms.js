@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto';
 import Room from '../models/Room.js';
 import AuditLog from '../models/AuditLog.js';
 import { requireAuth } from '../middleware/auth.js';
+import { isNonEmptyString, isValidObjectId } from '../lib/validation.js';
 
 const router = express.Router();
 
@@ -66,14 +67,18 @@ router.get('/', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     const { name, orgId, code } = req.body;
-    if (!name) return res.status(400).json({ error: 'name is required' });
+    if (!isNonEmptyString(name)) return res.status(400).json({ error: 'name is required' });
+    if (orgId && !isValidObjectId(orgId)) return res.status(400).json({ error: 'Invalid orgId' });
+    if (code && !/^CN-[A-Z0-9]{4,20}$/.test(code.trim().toUpperCase())) {
+      return res.status(400).json({ error: 'Room code must match CN-XXXX format' });
+    }
 
     const room = await Room.create({
-      code: code || await generateRoomCode(),
-      name,
+      code: code ? code.trim().toUpperCase() : await generateRoomCode(),
+      name: name.trim(),
       orgId: orgId || req.user.orgId || null,
       hostId: req.user.id,
-      participants: [{ userId: req.user.id, role: 'host', status: 'admitted' }],
+      participants: [{ userId: req.user.id, name: req.user.name || 'Host', role: 'host', status: 'admitted' }],
     });
 
     await AuditLog.create({
@@ -91,6 +96,7 @@ router.post('/', requireAuth, async (req, res) => {
 
 router.get('/:id', requireAuth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid room id' });
     const room = await Room.findById(req.params.id);
     if (!room) return res.status(404).json({ error: 'Room not found' });
 
@@ -106,12 +112,16 @@ router.get('/:id', requireAuth, async (req, res) => {
 
 router.patch('/:id', requireAuth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid room id' });
     const room = await Room.findById(req.params.id);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     if (!userCanManageRoom(req.user, room)) return res.status(403).json({ error: 'Not authorized' });
 
     const { name, status } = req.body;
-    if (name) room.name = name;
+    if (name !== undefined) {
+      if (!isNonEmptyString(name)) return res.status(400).json({ error: 'name must be a non-empty string' });
+      room.name = name.trim();
+    }
     if (status) {
       if (!['open', 'closed', 'archived'].includes(status)) {
         return res.status(400).json({ error: 'Invalid room status' });
@@ -128,6 +138,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
 
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid room id' });
     const room = await Room.findById(req.params.id);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     if (!userCanManageRoom(req.user, room)) return res.status(403).json({ error: 'Not authorized' });
@@ -145,9 +156,9 @@ router.delete('/:id', requireAuth, async (req, res) => {
 router.post('/join', requireAuth, async (req, res) => {
   try {
     const { code } = req.body;
-    if (!code) return res.status(400).json({ error: 'code is required' });
+    if (!isNonEmptyString(code)) return res.status(400).json({ error: 'code is required' });
 
-    const room = await Room.findOne({ code: code.toUpperCase(), status: 'open' });
+    const room = await Room.findOne({ code: code.trim().toUpperCase(), status: 'open' });
     if (!room) return res.status(404).json({ error: 'Open room not found' });
 
     const existing = room.participants.find((participant) => participant.userId?.toString() === req.user.id);
@@ -156,6 +167,7 @@ router.post('/join', requireAuth, async (req, res) => {
     } else {
       room.participants.push({
         userId: req.user.id,
+        name: req.user.name || req.user.email || 'Participant',
         role: req.user.role === 'guest' ? 'guest' : 'participant',
         status: req.user.role === 'guest' ? 'waiting' : 'admitted',
       });
@@ -171,7 +183,8 @@ router.post('/join', requireAuth, async (req, res) => {
 router.post('/:id/admit', requireAuth, async (req, res) => {
   try {
     const { userId, status = 'admitted' } = req.body;
-    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid room id' });
+    if (!isValidObjectId(userId)) return res.status(400).json({ error: 'userId is required' });
     if (!['admitted', 'denied'].includes(status)) return res.status(400).json({ error: 'Invalid admission status' });
 
     const room = await Room.findById(req.params.id);

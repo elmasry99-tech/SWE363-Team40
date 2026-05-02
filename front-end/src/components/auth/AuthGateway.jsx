@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Lock } from "lucide-react";
 import { roles } from "@/features/auth/index";
@@ -33,47 +33,75 @@ function Field({ label, type = "text", placeholder, name, value, onChange, error
 
 export function AuthGateway() {
   const router = useRouter();
-  const { signIn, addPendingAccountRequest, setSignupPendingRole, state } = useSessionState();
+  const { login, signup, setSignupPendingRole } = useSessionState();
   const [mode, setMode] = useState("login");
   const [selectedRole, setSelectedRole] = useState("internal");
-  const visibleRoles = mode === "signup" ? roles.filter((role) => role.id !== "guest" && role.id !== "admin") : roles.filter((role) => role.id !== "admin");
+  const [organizations, setOrganizations] = useState([]);
   const [organizationQuery, setOrganizationQuery] = useState("");
   const [showOrganizationMenu, setShowOrganizationMenu] = useState(false);
   const [errors, setErrors] = useState({});
+  const [submitError, setSubmitError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [formValues, setFormValues] = useState({
     fullName: "",
-    organizationName: "",
     jobTitle: "",
     workEmail: "",
-    organizationCode: "",
-    inviteCode: "CN-INTAKE-2048",
     password: "",
     confirmPassword: "",
-    verificationToken: "",
   });
-  const filteredOrganizations = state.organizations.filter((organization) =>
-    organization.name.toLowerCase().includes(organizationQuery.toLowerCase()),
+
+  const visibleRoles = useMemo(
+    () => roles.filter((role) => role.id !== "admin"),
+    [],
   );
-  const hasMatchingOrganization = state.organizations.some(
+
+  const filteredOrganizations = useMemo(() => {
+    return organizations.filter((organization) =>
+      organization.name.toLowerCase().includes(organizationQuery.toLowerCase()),
+    );
+  }, [organizationQuery, organizations]);
+
+  const selectedOrganization = organizations.find(
     (organization) => organization.name.toLowerCase() === organizationQuery.trim().toLowerCase(),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOrganizations() {
+      try {
+        const response = await fetch("/orgs/public");
+        const data = await response.json();
+        if (!cancelled) {
+          setOrganizations(data.organizations || []);
+        }
+      } catch {
+        if (!cancelled) {
+          setOrganizations([]);
+        }
+      }
+    }
+
+    loadOrganizations();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function updateValue(key, value) {
     setFormValues((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: "", organizationName: key === "organizationName" ? "" : current.organizationName }));
+    setSubmitError("");
+    setSuccessMessage("");
   }
 
   function validateForm() {
     const nextErrors = {};
 
     if (mode === "login") {
-      if (selectedRole === "guest") {
-        if (!formValues.inviteCode.trim()) nextErrors.inviteCode = "Invite code is required.";
-        if (!formValues.verificationToken.trim()) nextErrors.verificationToken = "Verification token is required.";
-      } else {
-        if (!formValues.workEmail.trim()) nextErrors.workEmail = "Work email is required.";
-        if (!formValues.password.trim()) nextErrors.password = "Password is required.";
-      }
+      if (!formValues.workEmail.trim()) nextErrors.workEmail = "Work email is required.";
+      if (!formValues.password.trim()) nextErrors.password = "Password is required.";
     }
 
     if (mode === "signup") {
@@ -81,14 +109,11 @@ export function AuthGateway() {
       if ((selectedRole === "oso" || selectedRole === "internal") && !organizationQuery.trim()) {
         nextErrors.organizationName = "Organization name is required.";
       }
-      if ((selectedRole === "oso" || selectedRole === "internal") && !hasMatchingOrganization) {
+      if ((selectedRole === "oso" || selectedRole === "internal") && !selectedOrganization) {
         nextErrors.organizationName = "Select an existing organization from the list.";
       }
       if (!formValues.jobTitle.trim()) nextErrors.jobTitle = "Job title is required.";
       if (!formValues.workEmail.trim()) nextErrors.workEmail = "Work email is required.";
-      if (selectedRole === "internal" && !formValues.organizationCode.trim()) {
-        nextErrors.organizationCode = "Organization invite code is required.";
-      }
       if (!formValues.password.trim()) {
         nextErrors.password = "Password is required.";
       } else if (formValues.password.length < 8) {
@@ -108,275 +133,256 @@ export function AuthGateway() {
     return Object.keys(nextErrors).length === 0;
   }
 
-  function onSubmit(event) {
+  async function onSubmit(event) {
     event.preventDefault();
     if (!validateForm()) return;
 
-    if (mode === "signup" && (selectedRole === "oso" || selectedRole === "internal") && selectedRole !== "general") {
-      addPendingAccountRequest({
+    setSubmitting(true);
+    setSubmitError("");
+    setSuccessMessage("");
+
+    try {
+      if (mode === "login") {
+        const result = await login({
+          email: formValues.workEmail.trim(),
+          password: formValues.password,
+        });
+
+        router.replace(getDefaultRouteForRole(result.user.role));
+        return;
+      }
+
+      const payload = {
         name: formValues.fullName.trim(),
         email: formValues.workEmail.trim(),
-        organization: organizationQuery.trim(),
-        requestedRole: selectedRole === "oso" ? "Organization Security Officer" : "Internal Employee",
-        requestedTitle: formValues.jobTitle.trim(),
-      });
-      setSignupPendingRole(selectedRole);
-      router.push(ROUTES.authPending);
-      return;
+        password: formValues.password,
+        role: selectedRole,
+        orgId: selectedOrganization?.id || null,
+      };
+
+      const result = await signup(payload);
+      if (result.status === "pending") {
+        setSignupPendingRole(selectedRole);
+        router.replace(ROUTES.authPending);
+        return;
+      }
+
+      setSuccessMessage("Account created. You can sign in now.");
+      setMode("login");
+      setFormValues((current) => ({
+        ...current,
+        password: "",
+        confirmPassword: "",
+      }));
+    } catch (error) {
+      setSubmitError(error.message || "Unable to continue.");
+    } finally {
+      setSubmitting(false);
     }
-    signIn(selectedRole);
-    router.push(getDefaultRouteForRole(selectedRole));
   }
 
   return (
-    <div className="overflow-hidden rounded-[22px] border border-[var(--border-dark)] bg-[rgba(11,24,43,0.82)] shadow-[0_28px_90px_rgba(2,6,23,0.38)] backdrop-blur sm:rounded-[26px]">
-      <div className="grid min-h-[calc(100vh-4rem)] lg:min-h-[780px] lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="flex flex-col justify-between bg-[linear-gradient(180deg,#0d1b31,#132741)] p-6 sm:p-8 lg:p-10">
-          <div>
-            <BrandMark large />
-            <div className="mt-6">
-              <p className="text-[28px] font-medium leading-tight text-white sm:text-[34px]">CypherNet</p>
-              <p className="mt-3 max-w-xl text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
-                Secure communications for organizations that need controlled access,
-                role-based oversight, protected files, and real-time collaboration.
-              </p>
+    <div className="grid min-h-screen bg-[linear-gradient(135deg,#09121d_0%,#0d1b2b_45%,#13263e_100%)] lg:grid-cols-[1.05fr_0.95fr]">
+      <div className="flex flex-col justify-between px-6 py-8 text-white sm:px-8 lg:px-12">
+        <div>
+          <BrandMark />
+          <div className="mt-12 max-w-[520px]">
+            <p className="inline-flex rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.18em] text-[var(--accent)]">
+              Protected Collaboration
+            </p>
+            <h2 className="mt-6 text-4xl font-medium leading-tight sm:text-5xl">
+              Real-time rooms, secure messaging, and controlled access from one gateway.
+            </h2>
+            <p className="mt-5 max-w-[440px] text-sm leading-7 text-slate-300 sm:text-base">
+              Sign in with your issued account or request access to your organization workspace.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            "Encrypted room messaging with audit-aware access controls",
+            "Socket-connected collaboration with moderated guest entry",
+            "Steganography-ready secure image exchange for approved participants",
+          ].map((item) => (
+            <div
+              key={item}
+              className="rounded-[18px] border border-[var(--border-dark)] bg-white/5 p-4 text-sm leading-6 text-slate-200"
+            >
+              {item}
             </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-[var(--surface-light)] p-4 sm:p-6 lg:p-8">
+        <Card className="p-5 sm:p-6 lg:p-8">
+          <div className="flex items-center gap-2 text-[var(--text-main)]">
+            <Lock className="h-5 w-5 text-[var(--accent-strong)]" />
+            <h1 className="text-[24px] font-medium">
+              {mode === "login" ? "Sign In" : "Create Account"}
+            </h1>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
+            Choose your access role, then continue into the workspace designed for that flow.
+          </p>
+
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <Button variant={mode === "login" ? "primary" : "secondary"} onClick={() => setMode("login")}>
+              Sign In
+            </Button>
+            <Button
+              variant={mode === "signup" ? "primary" : "secondary"}
+              onClick={() => {
+                setMode("signup");
+                setErrors({});
+                setSubmitError("");
+                setSuccessMessage("");
+              }}
+            >
+              Sign Up
+            </Button>
           </div>
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            {[
-              "Platform-wide tenant oversight and security controls",
-              "Organization-level policy, compliance, and room monitoring",
-              "Secure internal rooms with messaging, calls, and file sharing",
-              "Invite-only guest access with verification and moderated entry",
-            ].map((item) => (
-              <div
-                key={item}
-                className="rounded-[18px] border border-[var(--border-dark)] bg-white/5 p-4 text-sm leading-6 text-slate-200"
+          <div className="mt-6 space-y-3">
+            {visibleRoles.map((role) => (
+              <button
+                key={role.id}
+                type="button"
+                onClick={() => setSelectedRole(role.id)}
+                className={cn(
+                  "w-full rounded-[18px] border p-4 text-left transition",
+                  selectedRole === role.id
+                    ? "border-[rgba(23,147,170,0.38)] bg-[rgba(60,195,214,0.08)] shadow-[0_10px_24px_rgba(23,147,170,0.12)]"
+                    : "border-[var(--border-light)] bg-white hover:border-[rgba(23,147,170,0.24)]",
+                )}
               >
-                {item}
-              </div>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-[var(--text-main)]">{role.label}</p>
+                    <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{role.description}</p>
+                  </div>
+                  <span
+                    className={cn(
+                      "mt-1 h-4 w-4 rounded-full border",
+                      selectedRole === role.id
+                        ? "border-[var(--accent-strong)] bg-[var(--accent-strong)]"
+                        : "border-slate-300 bg-white",
+                    )}
+                  />
+                </div>
+              </button>
             ))}
           </div>
-        </div>
 
-        <div className="bg-[var(--surface-light)] p-4 sm:p-6 lg:p-8">
-          <Card className="p-5 sm:p-6 lg:p-8">
-            <div className="flex items-center gap-2 text-[var(--text-main)]">
-              <Lock className="h-5 w-5 text-[var(--accent-strong)]" />
-              <h1 className="text-[24px] font-medium">
-                {mode === "login" ? "Sign In" : "Create Account"}
-              </h1>
-            </div>
-            <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
-              Choose your access role, then continue into the workspace designed for that flow.
-            </p>
+          <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+            {mode === "signup" ? (
+              <Field
+                label="Full Name"
+                placeholder="Enter your full name"
+                name="fullName"
+                value={formValues.fullName}
+                onChange={(event) => updateValue("fullName", event.target.value)}
+                error={errors.fullName}
+              />
+            ) : null}
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <Button variant={mode === "login" ? "primary" : "secondary"} onClick={() => setMode("login")}>
-                Sign In
-              </Button>
-              <Button
-                variant={mode === "signup" ? "primary" : "secondary"}
-                onClick={() => {
-                  setMode("signup");
-                  if (selectedRole === "guest" || selectedRole === "admin") {
-                    setSelectedRole("general");
-                  }
-                  setErrors({});
-                }}
-              >
-                Sign Up
-              </Button>
-            </div>
-
-            <div className="mt-6 space-y-3">
-              {visibleRoles.map((role) => (
-                <button
-                  key={role.id}
-                  type="button"
-                  onClick={() => setSelectedRole(role.id)}
-                  className={cn(
-                    "w-full rounded-[18px] border p-4 text-left transition",
-                    selectedRole === role.id
-                      ? "border-[rgba(23,147,170,0.38)] bg-[rgba(60,195,214,0.08)] shadow-[0_10px_24px_rgba(23,147,170,0.12)]"
-                      : "border-[var(--border-light)] bg-white hover:border-[rgba(23,147,170,0.24)]",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-[var(--text-main)]">{role.label}</p>
-                      <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{role.description}</p>
-                    </div>
-                    <span
-                      className={cn(
-                        "mt-1 h-4 w-4 rounded-full border",
-                        selectedRole === role.id
-                          ? "border-[var(--accent-strong)] bg-[var(--accent-strong)]"
-                          : "border-slate-300 bg-white",
-                      )}
-                    />
+            {mode === "signup" && (selectedRole === "oso" || selectedRole === "internal") ? (
+              <div className="relative">
+                <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Organization Name</span>
+                <div className="relative">
+                  <input
+                    name="organizationName"
+                    type="text"
+                    value={organizationQuery}
+                    onFocus={() => setShowOrganizationMenu(true)}
+                    onChange={(event) => {
+                      setOrganizationQuery(event.target.value);
+                      setShowOrganizationMenu(true);
+                    }}
+                    placeholder="Type to search or choose an organization"
+                    autoComplete="off"
+                    className={cn(
+                      "h-12 w-full rounded-[14px] border px-4 pr-10 text-sm text-[var(--text-main)] outline-none",
+                      errors.organizationName ? "border-[#bf5460]" : "border-[var(--border-light)]",
+                    )}
+                  />
+                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-soft)]" />
+                </div>
+                {errors.organizationName ? <p className="mt-2 text-sm text-[#bf5460]">{errors.organizationName}</p> : null}
+                {showOrganizationMenu && filteredOrganizations.length ? (
+                  <div className="absolute z-10 mt-2 max-h-56 w-full overflow-auto rounded-[16px] border border-[var(--border-light)] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+                    {filteredOrganizations.map((organization) => (
+                      <button
+                        key={organization.id}
+                        type="button"
+                        onClick={() => {
+                          setOrganizationQuery(organization.name);
+                          setShowOrganizationMenu(false);
+                          setErrors((current) => ({ ...current, organizationName: "" }));
+                        }}
+                        className="block w-full border-b border-slate-100 px-4 py-3 text-left text-sm text-[var(--text-main)] last:border-b-0 hover:bg-slate-50"
+                      >
+                        {organization.name}
+                      </button>
+                    ))}
                   </div>
-                </button>
-              ))}
-            </div>
+                ) : null}
+              </div>
+            ) : null}
 
-            <form className="mt-6 space-y-4" onSubmit={onSubmit}>
-              {selectedRole === "guest" ? (
-                <></>
-              ) : (
-                <>
-                  {mode === "signup" ? (
-                    <Field
-                      label="Full Name"
-                      placeholder="Enter your full name"
-                      name="fullName"
-                      value={formValues.fullName}
-                      onChange={(event) => updateValue("fullName", event.target.value)}
-                      error={errors.fullName}
-                    />
-                  ) : null}
-                  {mode === "signup" && (selectedRole === "oso" || selectedRole === "internal") ? (
-                    <div className="relative">
-                      <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Organization Name</span>
-                      <div className="relative">
-                        <input
-                          name="organizationName"
-                          type="text"
-                          value={organizationQuery}
-                          onFocus={() => setShowOrganizationMenu(true)}
-                          onChange={(event) => {
-                            setOrganizationQuery(event.target.value);
-                            updateValue("organizationName", event.target.value);
-                            setShowOrganizationMenu(true);
-                          }}
-                          placeholder="Type to search or choose an organization"
-                          autoComplete="off"
-                          className={cn(
-                            "h-12 w-full rounded-[14px] border px-4 pr-10 text-sm text-[var(--text-main)] outline-none",
-                            errors.organizationName ? "border-[#bf5460]" : "border-[var(--border-light)]",
-                          )}
-                        />
-                        <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-soft)]" />
-                      </div>
-                      {showOrganizationMenu ? (
-                        <div className="absolute z-10 mt-2 max-h-48 w-full overflow-auto rounded-[16px] border border-[var(--border-light)] bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
-                          {filteredOrganizations.length ? (
-                            filteredOrganizations.map((organization) => (
-                              <button
-                                key={organization.slug}
-                                type="button"
-                                onClick={() => {
-                                  setOrganizationQuery(organization.name);
-                                  updateValue("organizationName", organization.name);
-                                  setShowOrganizationMenu(false);
-                                }}
-                                className="block w-full rounded-[12px] px-3 py-2 text-left text-sm text-[var(--text-main)] hover:bg-slate-50"
-                              >
-                                {organization.name}
-                              </button>
-                            ))
-                          ) : (
-                            <div className="rounded-[12px] px-3 py-2 text-sm text-[var(--text-soft)]">
-                              No matching organizations found.
-                            </div>
-                          )}
-                        </div>
-                      ) : null}
-                      {errors.organizationName ? (
-                        <p className="mt-2 text-sm text-[#bf5460]">{errors.organizationName}</p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {mode === "signup" ? (
-                    <Field
-                      label="Job Title"
-                      placeholder="Enter your role or title"
-                      name="jobTitle"
-                      value={formValues.jobTitle}
-                      onChange={(event) => updateValue("jobTitle", event.target.value)}
-                      error={errors.jobTitle}
-                    />
-                  ) : null}
-                  <Field
-                    label="Work Email"
-                    type="email"
-                    placeholder="name@organization.com"
-                    name="workEmail"
-                    value={formValues.workEmail}
-                    onChange={(event) => updateValue("workEmail", event.target.value)}
-                    error={errors.workEmail}
-                  />
-                </>
-              )}
+            {mode === "signup" ? (
+              <Field
+                label="Job Title"
+                placeholder="Enter your title"
+                name="jobTitle"
+                value={formValues.jobTitle}
+                onChange={(event) => updateValue("jobTitle", event.target.value)}
+                error={errors.jobTitle}
+              />
+            ) : null}
 
-              {mode === "signup" && selectedRole === "internal" ? (
-                <Field
-                  label="Organization Invite Code"
-                  placeholder="Enter your organization code"
-                  name="organizationCode"
-                  value={formValues.organizationCode}
-                  onChange={(event) => updateValue("organizationCode", event.target.value)}
-                  error={errors.organizationCode}
-                />
-              ) : null}
+            <Field
+              label="Work Email"
+              type="email"
+              placeholder="name@organization.com"
+              name="workEmail"
+              value={formValues.workEmail}
+              onChange={(event) => updateValue("workEmail", event.target.value)}
+              error={errors.workEmail}
+            />
 
-              {selectedRole === "guest" && mode === "login" ? (
-                <>
-                  <Field
-                    label="Invite Code"
-                    placeholder="Enter your invite code"
-                    name="inviteCode"
-                    value={formValues.inviteCode}
-                    onChange={(event) => updateValue("inviteCode", event.target.value)}
-                    error={errors.inviteCode}
-                  />
-                  <Field
-                    label="Verification Token"
-                    type="password"
-                    placeholder="Enter your verification token"
-                    name="verificationToken"
-                    value={formValues.verificationToken}
-                    onChange={(event) => updateValue("verificationToken", event.target.value)}
-                    error={errors.verificationToken}
-                  />
-                </>
-              ) : (
-                <Field
-                  label="Password"
-                  type="password"
-                  placeholder="Enter a secure credential"
-                  name="password"
-                  value={formValues.password}
-                  onChange={(event) => updateValue("password", event.target.value)}
-                  error={errors.password}
-                />
-              )}
+            <Field
+              label="Password"
+              type="password"
+              placeholder="Enter your password"
+              name="password"
+              value={formValues.password}
+              onChange={(event) => updateValue("password", event.target.value)}
+              error={errors.password}
+            />
 
-              {mode === "signup" ? (
-                <Field
-                  label="Confirm Password"
-                  type="password"
-                  placeholder="Confirm your password"
-                  name="confirmPassword"
-                  value={formValues.confirmPassword}
-                  onChange={(event) => updateValue("confirmPassword", event.target.value)}
-                  error={errors.confirmPassword}
-                />
-              ) : null}
+            {mode === "signup" ? (
+              <Field
+                label="Confirm Password"
+                type="password"
+                placeholder="Confirm your password"
+                name="confirmPassword"
+                value={formValues.confirmPassword}
+                onChange={(event) => updateValue("confirmPassword", event.target.value)}
+                error={errors.confirmPassword}
+              />
+            ) : null}
 
-              <Button type="submit" className="h-12 w-full">
-                {mode === "login" ? `Continue as ${roleLabel(selectedRole)}` : "Create Account"}
-              </Button>
-            </form>
-          </Card>
-        </div>
+            {submitError ? <p className="text-sm text-[#bf5460]">{submitError}</p> : null}
+            {successMessage ? <p className="text-sm text-emerald-600">{successMessage}</p> : null}
+
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "Please wait..." : mode === "login" ? "Enter Workspace" : "Submit Request"}
+            </Button>
+          </form>
+        </Card>
       </div>
     </div>
   );
-}
-
-function roleLabel(role) {
-  const match = roles.find((entry) => entry.id === role);
-  return match?.short || role;
 }

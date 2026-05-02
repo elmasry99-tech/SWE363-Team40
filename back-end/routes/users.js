@@ -2,6 +2,7 @@ import express from 'express';
 import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
 import { requireAuth } from '../middleware/auth.js';
+import { isNonEmptyString, isValidObjectId } from '../lib/validation.js';
 
 const router = express.Router();
 
@@ -9,7 +10,7 @@ const router = express.Router();
 router.post('/me/public-key', requireAuth, async (req, res) => {
   try {
     const { publicKey } = req.body;
-    if (!publicKey) {
+    if (!isNonEmptyString(publicKey)) {
       return res.status(400).json({ error: 'publicKey is required' });
     }
 
@@ -24,6 +25,10 @@ router.post('/me/public-key', requireAuth, async (req, res) => {
 // GET /users/:id/public-key  — fetch another user's public key to encrypt a steg message for them
 router.get('/:id/public-key', requireAuth, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
     const user = await User.findById(req.params.id).select('publicKey name');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -45,12 +50,16 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
     const { status } = req.body;
     if (!['active', 'disabled', 'pending'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status value' });
     }
 
-    const user = await User.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    const user = await User.findByIdAndUpdate(req.params.id, { status }, { returnDocument: 'after' });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     await AuditLog.create({

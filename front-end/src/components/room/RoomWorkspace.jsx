@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Users, Video } from "lucide-react";
+import { ArrowLeft, Check, Users, Video, X } from "lucide-react";
 import { AppScaffold } from "@/components/common/AppScaffold";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { CallPanel } from "@/components/call/CallPanel";
@@ -10,38 +10,114 @@ import { FileDropCard } from "@/components/files/FileDropCard";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { mockRooms } from "@/data/mockRooms";
 import { useSessionState } from "@/hooks/useSessionState";
 import { ROUTES } from "@/lib/routes";
 
+function normalizeParticipants(room, currentUser) {
+  return (room.participants || []).map((participant) => {
+    const userId = typeof participant.userId === "object" ? participant.userId?._id : participant.userId;
+    return {
+      userId,
+      name: participant.name || (userId === currentUser?.id ? currentUser.name : "Participant"),
+      role: participant.role,
+      status: participant.status,
+    };
+  });
+}
+
 export function RoomWorkspace({ pathname, roomId }) {
   const router = useRouter();
-  const {
-    state,
-    sendMessage,
-    addUpload,
-    sendUploadAsMessage,
-    toggleRoomLock,
-    setCallView,
-    admitGuest,
-    signOut,
-  } = useSessionState();
+  const { state, request, toggleRoomLock, setCallView, signOut } = useSessionState();
+  const [room, setRoom] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [uploadedFile, setUploadedFile] = useState(null);
 
-  const rooms = [...state.customRooms, ...mockRooms];
-  const room = rooms.find((entry) => entry.id === roomId) ?? rooms[0];
-  const messages = state.messagesByRoom[room.id] || [];
-  const uploadedFile = state.uploads[room.id];
-  const guestAdmitted = state.admittedGuestRooms.includes(room.id);
-  const participants = room.participants.map((person) =>
-    person.state === "Waiting" && guestAdmitted ? { ...person, state: "Present" } : person,
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRoom() {
+      try {
+        setLoading(true);
+        const data = await request(`/rooms/${roomId}`);
+        if (!cancelled) {
+          setRoom(data.room);
+          setWorkspaceError("");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setWorkspaceError(error.message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadRoom();
+    return () => {
+      cancelled = true;
+    };
+  }, [request, roomId]);
+
+  const participants = useMemo(
+    () => normalizeParticipants(room || {}, state.user),
+    [room, state.user],
   );
-  const [draft, setDraft] = useState("");
+
+  const canManageRoom = useMemo(() => {
+    return state.role === "admin"
+      || state.role === "oso"
+      || room?.hostId === state.user?.id;
+  }, [room?.hostId, state.role, state.user?.id]);
+
+  async function updateParticipantStatus(userId, status) {
+    try {
+      const data = await request(`/rooms/${roomId}/admit`, {
+        method: "POST",
+        body: JSON.stringify({ userId, status }),
+      });
+      setRoom(data.room);
+      setWorkspaceError("");
+    } catch (error) {
+      setWorkspaceError(error.message);
+    }
+  }
+
+  if (loading) {
+    return (
+      <AppScaffold
+        role={state.role}
+        title="Loading Room"
+        subtitle="Fetching room state"
+        pathname={pathname}
+        onLogout={signOut}
+      >
+        <Card className="p-6 text-sm text-[var(--text-soft)]">Loading room...</Card>
+      </AppScaffold>
+    );
+  }
+
+  if (!room) {
+    return (
+      <AppScaffold
+        role={state.role}
+        title="Room Not Found"
+        subtitle="The requested room is unavailable."
+        pathname={pathname}
+        onLogout={signOut}
+      >
+        <Card className="p-6 text-sm text-[#bf5460]">{workspaceError || "This room could not be loaded."}</Card>
+      </AppScaffold>
+    );
+  }
 
   return (
     <AppScaffold
       role={state.role}
       title={room.name}
-      subtitle={room.kind}
+      subtitle="Live room workspace"
       pathname={pathname}
       onLogout={signOut}
       actions={
@@ -60,27 +136,30 @@ export function RoomWorkspace({ pathname, roomId }) {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-2xl font-medium text-[var(--text-main)]">{room.name}</p>
-              <p className="mt-1 text-sm text-[var(--text-soft)]">{room.kind}</p>
+              <p className="mt-1 text-sm text-[var(--text-soft)]">Room Code {room.code}</p>
             </div>
             <div className="flex items-center gap-2">
-              <StatusPill tone="accent">Room Code {room.roomCode}</StatusPill>
+              <StatusPill tone={room.status === "open" ? "active" : "warning"}>{room.status}</StatusPill>
               <Button variant="muted" onClick={toggleRoomLock}>
                 {state.roomLocked ? "Unlock Room" : "Lock Room"}
               </Button>
             </div>
           </div>
 
+          {workspaceError ? <p className="text-sm text-[#bf5460]">{workspaceError}</p> : null}
+
           {state.callView === "video" ? (
-            <CallPanel onLeave={() => setCallView("chat")} />
+            <CallPanel
+              roomId={room.id}
+              participants={participants.filter((participant) => participant.status === "admitted")}
+              onLeave={() => setCallView("chat")}
+            />
           ) : (
             <ChatPanel
-              messages={messages}
-              draft={draft}
-              onDraftChange={setDraft}
-              onSend={() => {
-                sendMessage(room.id, draft);
-                setDraft("");
-              }}
+              roomId={room.id}
+              participants={participants}
+              uploadedFile={uploadedFile}
+              onUploadSent={() => setUploadedFile(null)}
             />
           )}
         </div>
@@ -90,22 +169,44 @@ export function RoomWorkspace({ pathname, roomId }) {
             title="Share protected files with room participants"
             subtitle="PDF, DOCX, PNG up to 10MB"
             uploadedFile={uploadedFile}
-            onUpload={(file) => file && addUpload(room.id, file)}
-            onSend={() => sendUploadAsMessage(room.id)}
+            onUpload={(file) => file && setUploadedFile(file)}
+            onSend={null}
           />
 
           <Card className="p-5">
             <p className="text-sm font-medium text-[var(--text-main)]">Participants</p>
             <div className="mt-4 space-y-3">
               {participants.map((person) => (
-                <div key={person.name} className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm text-[var(--text-main)]">{person.name}</p>
-                    <p className="text-xs text-[var(--text-soft)]">{person.state}</p>
+                <div key={`${person.userId}-${person.role}`} className="rounded-[16px] border border-[var(--border-light)] bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-[var(--text-main)]">{person.name}</p>
+                      <p className="text-xs text-[var(--text-soft)]">{person.role}</p>
+                    </div>
+                    <StatusPill tone={person.status === "waiting" ? "warning" : person.status === "admitted" ? "active" : "danger"}>
+                      {person.status}
+                    </StatusPill>
                   </div>
-                  <StatusPill tone={person.state === "Waiting" ? "warning" : "active"}>
-                    {person.state}
-                  </StatusPill>
+                  {canManageRoom && person.status === "waiting" ? (
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        variant="secondary"
+                        className="inline-flex items-center gap-2"
+                        onClick={() => updateParticipantStatus(person.userId, "admitted")}
+                      >
+                        <Check className="h-4 w-4" />
+                        Admit
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="inline-flex items-center gap-2"
+                        onClick={() => updateParticipantStatus(person.userId, "denied")}
+                      >
+                        <X className="h-4 w-4" />
+                        Deny
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -117,20 +218,17 @@ export function RoomWorkspace({ pathname, roomId }) {
               <Button
                 variant="secondary"
                 className="inline-flex items-center justify-center gap-2"
-                onClick={() => admitGuest(room.id)}
-                disabled={guestAdmitted}
-              >
-                <Users className="h-4 w-4" />
-                {guestAdmitted ? "Guest Admitted" : "Admit Waiting Guest"}
-              </Button>
-              <Button
-                variant="secondary"
-                className="inline-flex items-center justify-center gap-2"
                 onClick={() => setCallView(state.callView === "video" ? "chat" : "video")}
               >
                 <Video className="h-4 w-4" />
                 {state.callView === "video" ? "Return to Chat" : "Join Live Call"}
               </Button>
+              <div className="rounded-[16px] border border-[var(--border-light)] bg-slate-50 p-4 text-sm text-[var(--text-soft)]">
+                <div className="inline-flex items-center gap-2 text-[var(--text-main)]">
+                  <Users className="h-4 w-4" />
+                  {participants.filter((participant) => participant.status === "admitted").length} admitted participants
+                </div>
+              </div>
             </div>
           </Card>
         </div>

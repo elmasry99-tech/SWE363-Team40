@@ -8,35 +8,38 @@ import { useSessionState } from "@/hooks/useSessionState";
 
 const summaries = {
   admin: [
-    ["Platform Health", "All core services operational"],
-    ["Organizations", "4 tracked organizations in current snapshot"],
-    ["Security Events", "2 flagged items need review"],
+    ["Platform Health", "Organization and auth APIs are available"],
+    ["Organizations", "Manage tenant lifecycle and policy baselines"],
+    ["Security Events", "Realtime messaging and signaling are live"],
   ],
   oso: [
-    ["Tenant Policies", "4 active controls enforced"],
-    ["Active Rooms", "3 monitored rooms"],
-    ["Compliance", "Latest export ready"],
+    ["Tenant Policies", "Update retention and access settings"],
+    ["Active Rooms", "Monitor room status and participants"],
+    ["User Reviews", "Approve or disable organization users"],
   ],
   internal: [
-    ["Open Rooms", "3 active rooms available"],
-    ["Pending Guest", "1 room waiting for admission approval"],
-    ["Uploads", "Latest secure file delivered successfully"],
+    ["Open Rooms", "Create or join secure rooms"],
+    ["Live Chat", "Socket-backed room messaging is enabled"],
+    ["Calls", "WebRTC signaling is connected"],
   ],
   guest: [
-    ["Session State", "Invite access available"],
-    ["Verification", "Guest details required before admission"],
-    ["Room Scope", "Access remains limited to a single room"],
+    ["Session State", "Guest flow depends on issued credentials"],
+    ["Verification", "Waiting room moderation remains enforced"],
+    ["Room Scope", "Access stays limited to admitted rooms"],
+  ],
+  general: [
+    ["Rooms", "Join and collaborate in secure rooms"],
+    ["Messaging", "Realtime room chat is available"],
+    ["Calls", "Video calls use live signaling"],
   ],
 };
 
 const quickLinks = {
-  admin: [{ label: "View Reports", href: ROUTES.reports }],
-  oso: [{ label: "View Reports", href: ROUTES.reports }],
-  internal: [
-    { label: "Open Rooms", href: ROUTES.rooms },
-    { label: "View Reports", href: ROUTES.reports },
-  ],
+  admin: [{ label: "View Organizations", href: ROUTES.adminPlatform }],
+  oso: [{ label: "Open Organization Controls", href: ROUTES.adminOrganization }],
+  internal: [{ label: "Open Rooms", href: ROUTES.rooms }],
   guest: [],
+  general: [{ label: "Open Rooms", href: ROUTES.rooms }],
 };
 
 export function DashboardView({ pathname }) {
@@ -86,7 +89,7 @@ export function DashboardView({ pathname }) {
           <p className="text-base font-medium text-[var(--text-main)]">Session State</p>
           <div className="mt-4 space-y-3 text-sm text-[var(--text-soft)]">
             <p>Current role: {role}</p>
-            <p>Selected room: {state.roomId}</p>
+            <p>Selected room: {state.roomId || "None selected"}</p>
             <p>Call view: {state.callView}</p>
           </div>
         </Card>

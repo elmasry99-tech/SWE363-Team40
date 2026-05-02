@@ -16,6 +16,7 @@ export function FileDropCard({ title, subtitle, uploadedFile, onUpload, onSend }
     });
 
     onUpload({
+      file,
       name: file.name,
       type: file.type,
       preview,
@@ -38,7 +39,7 @@ export function FileDropCard({ title, subtitle, uploadedFile, onUpload, onSend }
       {uploadedFile ? (
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-[var(--text-soft)]">Attachment ready to send in chat.</p>
-          <Button variant="secondary" onClick={onSend}>
+          <Button variant="secondary" onClick={onSend} disabled={!onSend}>
             Send to Chat
           </Button>
         </div>

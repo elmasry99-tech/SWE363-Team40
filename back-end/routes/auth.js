@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { isNonEmptyString, isStrongPassword, isValidEmail, isValidObjectId } from '../lib/validation.js';
 
 const router = express.Router();
 
@@ -10,34 +11,49 @@ router.post('/signup', async (req, res) => {
   try {
     const { name, email, password, role, orgId } = req.body;
 
-    if (!name || !email || !password || !role) {
+    if (!isNonEmptyString(name) || !isNonEmptyString(email) || !isNonEmptyString(password) || !isNonEmptyString(role)) {
       return res.status(400).json({ error: 'name, email, password, and role are required' });
     }
 
-    const ALLOWED_SIGNUP_ROLES = ['internal', 'guest', 'general'];
+    const ALLOWED_SIGNUP_ROLES = ['oso', 'internal', 'guest', 'general'];
     if (!ALLOWED_SIGNUP_ROLES.includes(role)) {
-      return res.status(400).json({ error: 'Invalid role. Allowed values: internal, guest, general' });
+      return res.status(400).json({ error: 'Invalid role. Allowed values: oso, internal, guest, general' });
     }
 
-    const passwordRegex = /^(?=.*[A-Z])(?=.*[^a-zA-Z0-9]).{8,}$/;
-    if (!passwordRegex.test(password)) {
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    if (!isStrongPassword(password)) {
       return res.status(400).json({
         error: 'Password must be at least 8 characters, include one uppercase letter and one special character.',
       });
     }
 
-    const exists = await User.findOne({ email });
+    if (['oso', 'internal'].includes(role) && !isValidObjectId(orgId)) {
+      return res.status(400).json({ error: 'A valid orgId is required for oso and internal sign-up' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const exists = await User.findOne({ email: normalizedEmail });
     if (exists) {
       return res.status(409).json({ error: 'Email already registered' });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // admin, oso, and general are auto-active; internal and guest require approval
-    const autoActive = ['admin', 'oso', 'general'];
+    // Admin, general, and guest are immediately active; OSO and internal accounts require approval.
+    const autoActive = ['admin', 'general', 'guest'];
     const status = autoActive.includes(role) ? 'active' : 'pending';
 
-    const user = await User.create({ name, email, passwordHash, role, orgId: orgId || null, status });
+    const user = await User.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      passwordHash,
+      role,
+      orgId: orgId || null,
+      status,
+    });
 
     res.status(201).json({
       message: status === 'pending'
@@ -56,11 +72,15 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (!isNonEmptyString(email) || !isNonEmptyString(password)) {
       return res.status(400).json({ error: 'email and password are required' });
     }
 
-    const user = await User.findOne({ email });
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -78,7 +98,13 @@ router.post('/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, role: user.role, orgId: user.orgId },
+      {
+        id: user._id,
+        role: user.role,
+        orgId: user.orgId,
+        name: user.name,
+        email: user.email,
+      },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );

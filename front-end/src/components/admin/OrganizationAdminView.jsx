@@ -1,38 +1,134 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { AppScaffold } from "@/components/common/AppScaffold";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { mockPolicies, mockRetention } from "@/data/mockPolicies";
-import { officerRooms } from "@/data/mockRooms";
 import { useSessionState } from "@/hooks/useSessionState";
 
 export function OrganizationAdminView({ pathname }) {
-  const {
-    state,
-    setOfficerSection,
-    toggleRoomClosed,
-    toggleOfficerUserStatus,
-    approveEmployeeRequest,
-    denyEmployeeRequest,
-    togglePolicySetting,
-    updateRetentionSetting,
-    signOut,
-  } = useSessionState();
+  const { state, request, setOfficerSection, signOut } = useSessionState();
+  const [organization, setOrganization] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [screenError, setScreenError] = useState("");
   const section = state.officerSection;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOrganizationData() {
+      if (!state.user?.orgId) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const [orgData, userData, roomData] = await Promise.all([
+          request("/orgs"),
+          request(`/orgs/${state.user.orgId}/users`),
+          request("/rooms"),
+        ]);
+
+        if (!cancelled) {
+          setOrganization((orgData.organizations || [])[0] || null);
+          setUsers(userData.users || []);
+          setRooms(roomData.rooms || []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setScreenError(error.message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadOrganizationData();
+    return () => {
+      cancelled = true;
+    };
+  }, [request, state.user?.orgId]);
+
+  const pendingUsers = useMemo(
+    () => users.filter((user) => user.status === "pending"),
+    [users],
+  );
+
+  const managedUsers = useMemo(
+    () => users.filter((user) => user.role !== "oso"),
+    [users],
+  );
+
+  async function updateOrgPolicies(policies) {
+    if (!organization) return;
+
+    try {
+      const data = await request(`/orgs/${organization._id || organization.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          policies: {
+            ...organization.policies,
+            ...policies,
+          },
+        }),
+      });
+      setOrganization(data.organization);
+      setScreenError("");
+    } catch (error) {
+      setScreenError(error.message);
+    }
+  }
+
+  async function updateUserStatus(userId, status) {
+    try {
+      const data = await request(`/users/${userId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+
+      setUsers((current) =>
+        current.map((user) =>
+          user._id === userId || user.id === userId
+            ? { ...user, status: data.user.status }
+            : user,
+        ),
+      );
+      setScreenError("");
+    } catch (error) {
+      setScreenError(error.message);
+    }
+  }
+
+  async function toggleRoomClosed(room) {
+    try {
+      const nextStatus = room.status === "closed" ? "open" : "closed";
+      const data = await request(`/rooms/${room.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      setRooms((current) => current.map((entry) => (entry.id === room.id ? data.room : entry)));
+    } catch (error) {
+      setScreenError(error.message);
+    }
+  }
 
   return (
     <AppScaffold
       role="oso"
-      title="Northstar Legal"
+      title={organization?.name || "Organization"}
       subtitle="Organization Security Officer"
       pathname={pathname}
       onLogout={signOut}
-      actions={<StatusPill tone="accent">Tenant controls active</StatusPill>}
+      actions={<StatusPill tone="accent">Tenant APIs connected</StatusPill>}
     >
       <div className="mb-6 flex flex-wrap gap-2">
-        {["Policies", "Retention", "Users", "Rooms", "Reports"].map((label) => (
+        {["Policies", "Retention", "Users", "Rooms"].map((label) => (
           <Button
             key={label}
             variant={section === label ? "primary" : "secondary"}
@@ -43,98 +139,95 @@ export function OrganizationAdminView({ pathname }) {
         ))}
       </div>
 
-      {section === "Policies" ? (
+      {screenError ? <p className="mb-4 text-sm text-[#bf5460]">{screenError}</p> : null}
+
+      {loading ? <Card className="p-5 text-sm text-[var(--text-soft)]">Loading organization data...</Card> : null}
+
+      {!loading && section === "Policies" ? (
         <div className="grid gap-4 lg:grid-cols-2">
-          {mockPolicies.map((policy) => (
-            <Card key={policy.id} className="p-5">
+          {[
+            ["File Sharing", "fileSharing"],
+            ["Screen Sharing", "screenSharing"],
+            ["Guest Access", "guestAccess"],
+          ].map(([label, key]) => (
+            <Card key={key} className="p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-base font-medium text-[var(--text-main)]">{policy.name}</p>
-                  <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">{policy.value}</p>
+                  <p className="text-base font-medium text-[var(--text-main)]">{label}</p>
+                  <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">Backed by the real organization policy document.</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => togglePolicySetting(policy.name)}
+                  onClick={() => updateOrgPolicies({ [key]: !organization?.policies?.[key] })}
                   className={`relative inline-flex h-8 w-14 items-center rounded-full transition ${
-                    state.policySettings[policy.name] ? "bg-[var(--accent-strong)]" : "bg-slate-300"
+                    organization?.policies?.[key] ? "bg-[var(--accent-strong)]" : "bg-slate-300"
                   }`}
                 >
                   <span
                     className={`inline-block h-6 w-6 transform rounded-full bg-white transition ${
-                      state.policySettings[policy.name] ? "translate-x-7" : "translate-x-1"
+                      organization?.policies?.[key] ? "translate-x-7" : "translate-x-1"
                     }`}
                   />
                 </button>
               </div>
-              <div className="mt-4">
-                <StatusPill tone={state.policySettings[policy.name] ? "active" : "warning"}>
-                  {state.policySettings[policy.name] ? "Enabled" : "Disabled"}
-                </StatusPill>
-              </div>
             </Card>
           ))}
         </div>
       ) : null}
 
-      {section === "Retention" ? (
+      {!loading && section === "Retention" ? (
         <div className="grid gap-4 lg:grid-cols-2">
-          {mockRetention.map((item) => (
-            <Card key={item.id} className="p-5">
-              <p className="text-base font-medium text-[var(--text-main)]">{item.title}</p>
-              <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
-                {item.title === "Message Retention"
-                  ? "Retention controls how long room messages and shared content remain accessible before automatic cleanup."
-                  : "Session expiration controls how many days a session or invite remains valid before access expires automatically."}
-              </p>
+          {[
+            ["Message Retention", "retentionDays"],
+            ["Session Expiration", "sessionExpiry"],
+            ["Message Rate Limit", "messageRateLimit"],
+          ].map(([label, key]) => (
+            <Card key={key} className="p-5">
+              <p className="text-base font-medium text-[var(--text-main)]">{label}</p>
               <label className="mt-4 block">
-                <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Days</span>
+                <span className="mb-2 block text-sm font-medium text-[var(--text-main)]">Value</span>
                 <input
                   type="number"
                   min="1"
-                  value={state.retentionSettings[item.title]}
-                  onChange={(event) => updateRetentionSetting(item.title, event.target.value)}
+                  value={organization?.policies?.[key] || ""}
+                  onChange={(event) => updateOrgPolicies({ [key]: Number(event.target.value) || 0 })}
                   className="h-12 w-full rounded-[14px] border border-[var(--border-light)] bg-white px-4 text-sm text-[var(--text-main)] outline-none"
                 />
               </label>
-              <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">{item.description}</p>
             </Card>
           ))}
         </div>
       ) : null}
 
-      {section === "Users" ? (
+      {!loading && section === "Users" ? (
         <div className="space-y-6">
           <Card className="p-5">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-base font-medium text-[var(--text-main)]">Pending Account Requests</p>
                 <p className="mt-1 text-sm text-[var(--text-soft)]">
-                  Review internal employee and organization security officer sign-up requests for this organization.
+                  Review internal employee sign-up requests for this organization.
                 </p>
               </div>
-              <StatusPill tone="warning">{state.employeeJoinRequests.length} Pending</StatusPill>
+              <StatusPill tone="warning">{pendingUsers.length} Pending</StatusPill>
             </div>
             <div className="mt-4 space-y-3">
-              {state.employeeJoinRequests.length ? (
-                state.employeeJoinRequests.map((request) => (
+              {pendingUsers.length ? (
+                pendingUsers.map((user) => (
                   <div
-                    key={request.id}
+                    key={user._id || user.id}
                     className="flex flex-col gap-4 rounded-[16px] border border-[var(--border-light)] bg-white p-4 lg:flex-row lg:items-center lg:justify-between"
                   >
                     <div>
-                      <p className="text-sm font-medium text-[var(--text-main)]">{request.name}</p>
-                      <p className="text-sm text-[var(--text-soft)]">{request.email}</p>
-                      <p className="mt-1 text-xs text-[var(--text-muted)]">
-                        Requested access: {request.requestedRole} • Title: {request.requestedTitle}
-                        {request.organization ? ` • Organization: ${request.organization}` : ""}
-                        {" • "}Submitted at {request.requestedAt}
-                      </p>
+                      <p className="text-sm font-medium text-[var(--text-main)]">{user.name}</p>
+                      <p className="text-sm text-[var(--text-soft)]">{user.email}</p>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">Requested access: {user.role}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="secondary" onClick={() => denyEmployeeRequest(request.id)}>
+                      <Button variant="secondary" onClick={() => updateUserStatus(user._id || user.id, "disabled")}>
                         Deny
                       </Button>
-                      <Button onClick={() => approveEmployeeRequest(request.id)}>Accept</Button>
+                      <Button onClick={() => updateUserStatus(user._id || user.id, "active")}>Accept</Button>
                     </div>
                   </div>
                 ))
@@ -147,8 +240,8 @@ export function OrganizationAdminView({ pathname }) {
           </Card>
 
           <div className="space-y-3">
-            {state.officerManagedUsers.map((user) => (
-              <Card key={user.id} className="p-5">
+            {managedUsers.map((user) => (
+              <Card key={user._id || user.id} className="p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p className="text-base font-medium text-[var(--text-main)]">{user.name}</p>
@@ -156,11 +249,14 @@ export function OrganizationAdminView({ pathname }) {
                     <p className="mt-1 text-xs text-[var(--text-muted)]">{user.email}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <StatusPill tone={user.accountStatus === "disabled" ? "danger" : "active"}>
-                      {user.accountStatus}
+                    <StatusPill tone={user.status === "disabled" ? "danger" : user.status === "pending" ? "warning" : "active"}>
+                      {user.status}
                     </StatusPill>
-                    <Button variant="secondary" onClick={() => toggleOfficerUserStatus(user.id)}>
-                      {user.accountStatus === "disabled" ? "Activate" : "Disable"}
+                    <Button
+                      variant="secondary"
+                      onClick={() => updateUserStatus(user._id || user.id, user.status === "disabled" ? "active" : "disabled")}
+                    >
+                      {user.status === "disabled" ? "Activate" : "Disable"}
                     </Button>
                   </div>
                 </div>
@@ -170,43 +266,22 @@ export function OrganizationAdminView({ pathname }) {
         </div>
       ) : null}
 
-      {section === "Rooms" ? (
+      {!loading && section === "Rooms" ? (
         <div className="space-y-3">
-          {officerRooms.map((room) => {
-            const isClosed = state.closedRoomIds.includes(room.id);
-            const roomState = isClosed ? "Closed" : room.state;
-
-            return (
+          {rooms.map((room) => (
             <Card key={room.id} className="p-5">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-base font-medium text-[var(--text-main)]">{room.name}</p>
-                  <p className="text-sm text-[var(--text-soft)]">
-                    Owner: {room.owner} • {room.policy}
-                  </p>
+                  <p className="text-sm text-[var(--text-soft)]">Room code {room.code}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusPill tone={roomState === "Live" ? "active" : "warning"}>{roomState}</StatusPill>
-                  <Button variant="secondary" onClick={() => toggleRoomClosed(room.id)}>
-                    {isClosed ? "Reopen Room" : "Force Close"}
+                  <StatusPill tone={room.status === "open" ? "active" : "warning"}>{room.status}</StatusPill>
+                  <Button variant="secondary" onClick={() => toggleRoomClosed(room)}>
+                    {room.status === "closed" ? "Reopen Room" : "Force Close"}
                   </Button>
                 </div>
               </div>
-            </Card>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {section === "Reports" ? (
-        <div className="space-y-3">
-          {[
-            "Forced room close recorded for M&A Due Diligence.",
-            "Metadata-only export generated for weekly compliance report.",
-            "Guest verification completed for Client Intake - Jones.",
-          ].map((entry) => (
-            <Card key={entry} className="p-5">
-              <p className="text-sm leading-6 text-[var(--text-main)]">{entry}</p>
             </Card>
           ))}
         </div>
