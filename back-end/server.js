@@ -44,7 +44,7 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true }));
 
   const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf',
-    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
 
   const upload = multer({
     dest: 'uploads/',

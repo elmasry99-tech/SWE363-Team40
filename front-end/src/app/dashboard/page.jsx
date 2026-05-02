@@ -6,7 +6,7 @@ import { useRoleRedirect } from "@/hooks/useRoleRedirect";
 
 export default function DashboardPage() {
   const pathname = usePathname();
-  const { hydrated } = useRoleRedirect(["oso", "internal", "guest", "admin"]);
+  const { hydrated } = useRoleRedirect(["oso", "internal", "guest", "admin", "general"]);
 
   if (!hydrated) return null;
   return <DashboardView pathname={pathname} />;

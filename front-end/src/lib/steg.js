@@ -1,13 +1,21 @@
 export async function embedInImage(imageFile, dataBytes) {
-  const img = await createImageBitmap(imageFile);
+  const img = await createImageBitmap(imageFile, {
+    colorSpaceConversion: "none",
+    premultiplyAlpha: "none",
+  });
   const canvas = document.createElement("canvas");
   canvas.width = img.width;
   canvas.height = img.height;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.drawImage(img, 0, 0);
 
   const pixelData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const pixels = pixelData.data;
+
+  // Force full opacity (alpha=255) to prevent any canvas premultiplied-alpha rounding errors
+  for (let i = 0; i < pixels.length; i += 4) {
+    pixels[i + 3] = 255;
+  }
 
   // Prepend 4-byte big-endian length header
   const len = dataBytes.length;
@@ -43,11 +51,14 @@ export async function embedInImage(imageFile, dataBytes) {
 }
 
 export async function extractFromImage(imageBlob) {
-  const img = await createImageBitmap(imageBlob);
+  const img = await createImageBitmap(imageBlob, {
+    colorSpaceConversion: "none",
+    premultiplyAlpha: "none",
+  });
   const canvas = document.createElement("canvas");
   canvas.width = img.width;
   canvas.height = img.height;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.drawImage(img, 0, 0);
 
   const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;

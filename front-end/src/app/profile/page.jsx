@@ -6,7 +6,7 @@ import { useRoleRedirect } from "@/hooks/useRoleRedirect";
 
 export default function ProfilePage() {
   const pathname = usePathname();
-  const { hydrated } = useRoleRedirect(["admin", "oso", "internal", "guest"]);
+  const { hydrated } = useRoleRedirect(["admin", "oso", "internal", "guest", "general"]);
   if (!hydrated) return null;
   return <ProfileView pathname={pathname} />;
 }

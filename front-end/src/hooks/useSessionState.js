@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { generateKeyPair } from "@/lib/crypto";
-import { readJsonResponse } from "@/lib/api";
+import { readJsonResponse, buildBackendUrl } from "@/lib/api";
 import { closeSocketClient } from "@/lib/socket";
 import { SESSION_STORAGE_KEY } from "@/lib/constants";
 
@@ -92,6 +92,7 @@ function clearStore() {
 
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    window.localStorage.removeItem("cyphernet.privateKey");
   }
 
   closeSocketClient();
@@ -110,7 +111,7 @@ async function request(path, options = {}) {
     headers.set("Authorization", `Bearer ${store.token}`);
   }
 
-  const response = await fetch(path, {
+  const response = await fetch(buildBackendUrl(path), {
     ...options,
     headers,
   });

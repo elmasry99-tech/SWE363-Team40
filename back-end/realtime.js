@@ -4,7 +4,11 @@ import Message from './models/Message.js';
 import Room from './models/Room.js';
 
 function verifySocketUser(socket) {
-  const token = socket.handshake?.authToken || socket.handshake?.query?.token;
+  let token = null;
+  if (socket.request && socket.request.url) {
+    const url = new URL(socket.request.url, 'http://localhost');
+    token = url.searchParams.get('token');
+  }
   if (!token) return null;
 
   try {
@@ -68,8 +72,14 @@ export function initRealtime(httpServer) {
         for await (const request of socket.procedure('message:send')) {
           try {
             const { roomId, content, type = 'text' } = request.data || {};
-            if (!roomId || !content) return sendError(request, 'roomId and content are required');
-            if (!await canSendToRoom(user, roomId)) return sendError(request, 'Not authorized');
+            if (!roomId || !content) {
+              sendError(request, 'roomId and content are required');
+              continue;
+            }
+            if (!await canSendToRoom(user, roomId)) {
+              sendError(request, 'Not authorized');
+              continue;
+            }
 
             const message = await Message.create({ roomId, senderId: user.id, content, type });
             const payload = {

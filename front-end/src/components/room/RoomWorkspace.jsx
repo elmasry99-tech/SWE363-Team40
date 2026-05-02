@@ -34,6 +34,8 @@ export function RoomWorkspace({ pathname, roomId }) {
   const [uploadedFile, setUploadedFile] = useState(null);
 
   useEffect(() => {
+    if (!state.hydrated || !state.isAuthenticated) return;
+
     let cancelled = false;
 
     async function loadRoom() {
@@ -59,7 +61,7 @@ export function RoomWorkspace({ pathname, roomId }) {
     return () => {
       cancelled = true;
     };
-  }, [request, roomId]);
+  }, [request, roomId, state.hydrated, state.isAuthenticated]);
 
   const participants = useMemo(
     () => normalizeParticipants(room || {}, state.user),

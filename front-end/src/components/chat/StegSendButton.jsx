@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { ImagePlus, Loader2 } from "lucide-react";
 import { importPublicKey, encryptMessage } from "@/lib/crypto";
 import { embedInImage } from "@/lib/steg";
+import { buildBackendUrl } from "@/lib/api";
 
 export function StegSendButton({ receiverId, onSend }) {
   const fileRef = useRef(null);
@@ -35,7 +36,7 @@ export function StegSendButton({ receiverId, onSend }) {
       const session = JSON.parse(localStorage.getItem("cyphernet.session") || "{}");
       const token = session.token;
 
-      const res = await fetch(`/users/${receiverId}/public-key`, {
+      const res = await fetch(buildBackendUrl(`/users/${receiverId}/public-key`), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error("Failed to fetch receiver public key");

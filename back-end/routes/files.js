@@ -19,6 +19,8 @@ const allowedMimeTypes = [
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+  'text/csv',
 ];
 
 const upload = multer({

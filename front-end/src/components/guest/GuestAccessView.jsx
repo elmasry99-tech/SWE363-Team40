@@ -1,13 +1,16 @@
 "use client";
 
 import { CheckCircle2, Lock } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { AppScaffold } from "@/components/common/AppScaffold";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { useSessionState } from "@/hooks/useSessionState";
+import { ROUTES } from "@/lib/routes";
 
 export function GuestAccessView({ pathname }) {
+  const router = useRouter();
   const { state, setGuestStep, signOut } = useSessionState();
 
   return (
@@ -55,8 +58,11 @@ export function GuestAccessView({ pathname }) {
             <p className="mt-3 text-base leading-6 text-[var(--text-soft)]">
               Use the main authentication screen to sign in with your issued guest account, then join the room using the room code you received.
             </p>
-            <div className="mt-6">
+            <div className="mt-6 space-y-3">
               <StatusPill tone="accent">JWT-backed guest login required</StatusPill>
+              <Button className="w-full mt-3" onClick={() => router.push(ROUTES.rooms)}>
+                Go to Rooms
+              </Button>
             </div>
           </Card>
         </div>

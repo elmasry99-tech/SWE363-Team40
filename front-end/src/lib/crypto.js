@@ -10,7 +10,7 @@ export async function generateKeyPair() {
 
   const session = JSON.parse(localStorage.getItem("cyphernet.session") || "{}");
   if (session.token) {
-    await fetch("/users/me/public-key", {
+    await fetch(new URL("/users/me/public-key", process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
       body: JSON.stringify({ publicKey: pubBase64 }),

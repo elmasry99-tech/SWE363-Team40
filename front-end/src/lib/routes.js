@@ -29,7 +29,7 @@ export function getDefaultRouteForRole(role) {
     case "internal":
       return ROUTES.rooms;
     case "guest":
-      return ROUTES.guest;
+      return ROUTES.rooms;
     case "general":
       return ROUTES.rooms;
     default:

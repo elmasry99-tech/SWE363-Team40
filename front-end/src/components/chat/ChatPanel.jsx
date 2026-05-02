@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Paperclip, Send } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StegMessage } from "@/components/chat/StegMessage";
 import { StegRevealModal } from "@/components/chat/StegRevealModal";
 import { StegSendButton } from "@/components/chat/StegSendButton";
-import { formatTimestamp, readJsonResponse, fileToDataUrl } from "@/lib/api";
+import { formatTimestamp, readJsonResponse, fileToDataUrl, buildBackendUrl } from "@/lib/api";
 import { getSocketClient } from "@/lib/socket";
 import { useSessionState } from "@/hooks/useSessionState";
 
@@ -38,6 +38,7 @@ function normalizeMessage(message, participants, currentUser) {
       author: senderId === currentUser?.id ? "You" : senderName,
       time: formatTimestamp(message.createdAt),
       imageUrl: content.imageUrl,
+      fileId: content.fileId,
     };
   }
 
@@ -58,6 +59,11 @@ export function ChatPanel({ roomId, participants, uploadedFile, onUploadSent }) 
   const [chatError, setChatError] = useState("");
   const [revealBlob, setRevealBlob] = useState(null);
   const currentUser = state.user;
+  const currentUserRef = useRef(currentUser);
+  const participantsRef = useRef(participants);
+  currentUserRef.current = currentUser;
+  participantsRef.current = participants;
+
   const receiver = useMemo(
     () => participants.find((participant) => participant.userId && participant.userId !== currentUser?.id && participant.status === "admitted"),
     [currentUser?.id, participants],
@@ -71,7 +77,7 @@ export function ChatPanel({ roomId, participants, uploadedFile, onUploadSent }) 
         setLoading(true);
         const data = await request(`/messages/${roomId}`);
         if (!cancelled) {
-          setMessages((data.messages || []).map((message) => normalizeMessage(message, participants, currentUser)));
+          setMessages((data.messages || []).map((message) => normalizeMessage(message, participantsRef.current, currentUserRef.current)));
           setChatError("");
         }
       } catch (error) {
@@ -89,7 +95,7 @@ export function ChatPanel({ roomId, participants, uploadedFile, onUploadSent }) 
     return () => {
       cancelled = true;
     };
-  }, [currentUser, participants, request, roomId]);
+  }, [request, roomId]);
 
   useEffect(() => {
     if (!state.token) return undefined;
@@ -138,12 +144,25 @@ export function ChatPanel({ roomId, participants, uploadedFile, onUploadSent }) 
     if (!state.token) return;
 
     try {
-      const imageUrl = await fileToDataUrl(stegBlob);
+      const formData = new FormData();
+      formData.append("roomId", roomId);
+      formData.append("file", new File([stegBlob], "steg-message.png", { type: "image/png" }));
+      const response = await fetch(buildBackendUrl("/files/upload"), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${state.token}` },
+        body: formData,
+      });
+      if (!response.ok) {
+        const errData = await readJsonResponse(response);
+        throw new Error(errData.error || "Failed to upload steg image");
+      }
+      const data = await readJsonResponse(response);
+
       const socket = getSocketClient(state.token);
       await socket.invoke("message:send", {
         roomId,
         type: "steg",
-        content: JSON.stringify({ imageUrl }),
+        content: JSON.stringify({ fileId: data.file._id }),
       });
     } catch (error) {
       setChatError(error.message);
@@ -166,9 +185,14 @@ export function ChatPanel({ roomId, participants, uploadedFile, onUploadSent }) 
 
   async function revealMessage(message) {
     try {
-      const response = await fetch(message.imageUrl);
-      const blob = await response.blob();
-      setRevealBlob(blob);
+      if (message.fileId) {
+        const blob = await requestBlob(`/files/${message.fileId}`);
+        setRevealBlob(blob);
+      } else if (message.imageUrl) {
+        const response = await fetch(message.imageUrl);
+        const blob = await response.blob();
+        setRevealBlob(blob);
+      }
     } catch {
       setChatError("Could not load the steg image.");
     }
@@ -181,7 +205,7 @@ export function ChatPanel({ roomId, participants, uploadedFile, onUploadSent }) 
       const formData = new FormData();
       formData.append("roomId", roomId);
       formData.append("file", uploadedFile.file);
-      const response = await fetch("/files/upload", {
+      const response = await fetch(buildBackendUrl("/files/upload"), {
         method: "POST",
         headers: { Authorization: `Bearer ${state.token}` },
         body: formData,
@@ -216,7 +240,9 @@ export function ChatPanel({ roomId, participants, uploadedFile, onUploadSent }) 
               <StegMessage
                 key={message.id}
                 message={message}
+                canReveal={message.author !== "You"}
                 onReveal={() => revealMessage(message)}
+                requestBlob={requestBlob}
               />
             );
           }

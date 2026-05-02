@@ -2,7 +2,11 @@ import jwt from 'jsonwebtoken';
 import socketClusterServer from 'socketcluster-server';
 
 function socketUser(socket) {
-  const token = socket.handshake?.authToken || socket.handshake?.query?.token;
+  let token = null;
+  if (socket.request && socket.request.url) {
+    const url = new URL(socket.request.url, 'http://localhost');
+    token = url.searchParams.get('token');
+  }
   if (!token) return null;
 
   try {
@@ -45,7 +49,7 @@ export function initSignaling(httpServer, agServer = null) {
     for await (const { socket } of server.listener('connection')) {
       const user = socket.user || socketUser(socket);
 
-      for (const event of ['call:offer', 'call:answer', 'call:ice-candidate', 'call:end']) {
+      for (const event of ['call:offer', 'call:answer', 'call:ice-candidate', 'call:end', 'presence']) {
         (async () => {
           for await (const data of socket.receiver(event)) {
             relay(server, event, user, data);

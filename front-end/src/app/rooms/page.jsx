@@ -6,7 +6,7 @@ import { useRoleRedirect } from "@/hooks/useRoleRedirect";
 
 export default function RoomsPage() {
   const pathname = usePathname();
-  const { hydrated } = useRoleRedirect(["internal", "general"]);
+  const { hydrated } = useRoleRedirect(["internal", "general", "guest"]);
   if (!hydrated) return null;
   return <RoomsList pathname={pathname} />;
 }

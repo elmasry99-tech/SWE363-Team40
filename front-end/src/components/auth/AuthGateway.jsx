@@ -8,7 +8,7 @@ import { BrandMark } from "@/components/common/BrandMark";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useSessionState } from "@/hooks/useSessionState";
-import { ROUTES, getDefaultRouteForRole } from "@/lib/routes";
+import { ROUTES, getDefaultRouteForRole, getRoomRoute } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 
 function Field({ label, type = "text", placeholder, name, value, onChange, error }) {
@@ -33,7 +33,13 @@ function Field({ label, type = "text", placeholder, name, value, onChange, error
 
 export function AuthGateway() {
   const router = useRouter();
-  const { login, signup, setSignupPendingRole } = useSessionState();
+  const { hydrated, state, login, signup, setSignupPendingRole } = useSessionState();
+
+  useEffect(() => {
+    if (hydrated && state.isAuthenticated) {
+      router.replace(getDefaultRouteForRole(state.role));
+    }
+  }, [hydrated, state.isAuthenticated, state.role, router]);
   const [mode, setMode] = useState("login");
   const [selectedRole, setSelectedRole] = useState("internal");
   const [organizations, setOrganizations] = useState([]);
@@ -49,10 +55,11 @@ export function AuthGateway() {
     workEmail: "",
     password: "",
     confirmPassword: "",
+    roomCode: "",
   });
 
   const visibleRoles = useMemo(
-    () => roles.filter((role) => role.id !== "admin"),
+    () => roles.filter((role) => role.id !== "admin" && role.id !== "guest"),
     [],
   );
 
@@ -104,6 +111,11 @@ export function AuthGateway() {
       if (!formValues.password.trim()) nextErrors.password = "Password is required.";
     }
 
+    if (mode === "guest") {
+      if (!formValues.fullName.trim()) nextErrors.fullName = "Name is required.";
+      if (!formValues.roomCode.trim()) nextErrors.roomCode = "Room Code is required.";
+    }
+
     if (mode === "signup") {
       if (!formValues.fullName.trim()) nextErrors.fullName = "Full name is required.";
       if ((selectedRole === "oso" || selectedRole === "internal") && !organizationQuery.trim()) {
@@ -149,6 +161,41 @@ export function AuthGateway() {
         });
 
         router.replace(getDefaultRouteForRole(result.user.role));
+        return;
+      }
+
+      if (mode === "guest") {
+        const generatedEmail = `guest_${Date.now()}@guest.local`;
+        const generatedPassword = `Guest123!${Math.random().toString(36).substring(2, 10)}`;
+        
+        await signup({
+          name: formValues.fullName.trim(),
+          email: generatedEmail,
+          password: generatedPassword,
+          role: "guest",
+        });
+
+        const loginResult = await login({
+          email: generatedEmail,
+          password: generatedPassword,
+        });
+
+        const joinResponse = await fetch("/rooms/join", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${loginResult.token}`,
+          },
+          body: JSON.stringify({ code: formValues.roomCode.trim() }),
+        });
+
+        if (!joinResponse.ok) {
+          const errData = await joinResponse.json().catch(() => ({}));
+          throw new Error(errData.error || "Invalid room code or room is closed.");
+        }
+
+        const joinData = await joinResponse.json();
+        router.replace(getRoomRoute(joinData.room.id));
         return;
       }
 
@@ -220,14 +267,14 @@ export function AuthGateway() {
           <div className="flex items-center gap-2 text-[var(--text-main)]">
             <Lock className="h-5 w-5 text-[var(--accent-strong)]" />
             <h1 className="text-[24px] font-medium">
-              {mode === "login" ? "Sign In" : "Create Account"}
+              {mode === "login" ? "Sign In" : mode === "signup" ? "Create Account" : "Join as Guest"}
             </h1>
           </div>
           <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
             Choose your access role, then continue into the workspace designed for that flow.
           </p>
 
-          <div className="mt-6 grid grid-cols-2 gap-3">
+          <div className="mt-6 grid grid-cols-3 gap-3">
             <Button variant={mode === "login" ? "primary" : "secondary"} onClick={() => setMode("login")}>
               Sign In
             </Button>
@@ -242,10 +289,14 @@ export function AuthGateway() {
             >
               Sign Up
             </Button>
+            <Button variant={mode === "guest" ? "primary" : "secondary"} onClick={() => setMode("guest")}>
+              Join as Guest
+            </Button>
           </div>
 
-          <div className="mt-6 space-y-3">
-            {visibleRoles.map((role) => (
+          {mode === "signup" && (
+            <div className="mt-6 space-y-3">
+              {visibleRoles.map((role) => (
               <button
                 key={role.id}
                 type="button"
@@ -274,16 +325,28 @@ export function AuthGateway() {
               </button>
             ))}
           </div>
+          )}
 
           <form className="mt-6 space-y-4" onSubmit={onSubmit}>
-            {mode === "signup" ? (
+            {mode === "signup" || mode === "guest" ? (
               <Field
-                label="Full Name"
-                placeholder="Enter your full name"
+                label={mode === "guest" ? "Your Name" : "Full Name"}
+                placeholder={mode === "guest" ? "Enter your name" : "Enter your full name"}
                 name="fullName"
                 value={formValues.fullName}
                 onChange={(event) => updateValue("fullName", event.target.value)}
                 error={errors.fullName}
+              />
+            ) : null}
+
+            {mode === "guest" ? (
+              <Field
+                label="Room Code"
+                placeholder="e.g. CN-A1B2C3"
+                name="roomCode"
+                value={formValues.roomCode}
+                onChange={(event) => updateValue("roomCode", event.target.value)}
+                error={errors.roomCode}
               />
             ) : null}
 
@@ -342,25 +405,29 @@ export function AuthGateway() {
               />
             ) : null}
 
-            <Field
-              label="Work Email"
-              type="email"
-              placeholder="name@organization.com"
-              name="workEmail"
-              value={formValues.workEmail}
-              onChange={(event) => updateValue("workEmail", event.target.value)}
-              error={errors.workEmail}
-            />
+            {mode !== "guest" && (
+              <>
+                <Field
+                  label="Work Email"
+                  type="email"
+                  placeholder="name@organization.com"
+                  name="workEmail"
+                  value={formValues.workEmail}
+                  onChange={(event) => updateValue("workEmail", event.target.value)}
+                  error={errors.workEmail}
+                />
 
-            <Field
-              label="Password"
-              type="password"
-              placeholder="Enter your password"
-              name="password"
-              value={formValues.password}
-              onChange={(event) => updateValue("password", event.target.value)}
-              error={errors.password}
-            />
+                <Field
+                  label="Password"
+                  type="password"
+                  placeholder="Enter your password"
+                  name="password"
+                  value={formValues.password}
+                  onChange={(event) => updateValue("password", event.target.value)}
+                  error={errors.password}
+                />
+              </>
+            )}
 
             {mode === "signup" ? (
               <Field

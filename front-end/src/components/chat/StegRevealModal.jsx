@@ -16,7 +16,7 @@ export function StegRevealModal({ imageBlob, onClose }) {
     async function reveal() {
       try {
         const cipherBytes = await extractFromImage(imageBlob);
-        const base64Ciphertext = btoa(String.fromCharCode(...cipherBytes));
+        const base64Ciphertext = new TextDecoder().decode(cipherBytes);
         const privKey = await loadPrivateKey();
         const message = await decryptMessage(privKey, base64Ciphertext);
         if (!cancelled) {

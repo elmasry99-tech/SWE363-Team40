@@ -28,6 +28,8 @@ export function RoomsList({ pathname }) {
   const [joinCode, setJoinCode] = useState("");
 
   useEffect(() => {
+    if (!state.hydrated || !state.isAuthenticated) return;
+
     let cancelled = false;
 
     async function loadRooms() {
@@ -53,7 +55,7 @@ export function RoomsList({ pathname }) {
     return () => {
       cancelled = true;
     };
-  }, [request]);
+  }, [request, state.hydrated, state.isAuthenticated]);
 
   const orderedRooms = useMemo(() => rooms, [rooms]);
 
