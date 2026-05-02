@@ -1,0 +1,121 @@
+import jwt from 'jsonwebtoken';
+import socketClusterServer from 'socketcluster-server';
+import Message from './models/Message.js';
+import Room from './models/Room.js';
+
+function verifySocketUser(socket) {
+  const token = socket.handshake?.authToken || socket.handshake?.query?.token;
+  if (!token) return null;
+
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+async function canSendToRoom(user, roomId) {
+  if (!user) return false;
+  const room = await Room.findById(roomId);
+  if (!room) return false;
+  return user.role === 'admin'
+    || room.hostId?.toString() === user.id
+    || room.participants.some((entry) => entry.userId?.toString() === user.id && entry.status === 'admitted')
+    || (user.role === 'oso' && user.orgId && room.orgId?.toString() === user.orgId);
+}
+
+function sendAck(request, payload) {
+  if (request?.end) request.end(payload);
+}
+
+function sendError(request, message) {
+  if (!request?.error) return;
+  const error = new Error(message);
+  error.name = 'RealtimeError';
+  request.error(error);
+}
+
+export function initRealtime(httpServer) {
+  const agServer = socketClusterServer.attach(httpServer, {
+    path: '/socketcluster/',
+  });
+
+  agServer.setMiddleware(agServer.MIDDLEWARE_INBOUND, async (middlewareStream) => {
+    for await (const action of middlewareStream) {
+      if (action.type === 'subscribe' && action.channel?.startsWith('room-')) {
+        const roomId = action.channel.slice('room-'.length);
+        const user = action.socket.user || verifySocketUser(action.socket);
+        action.socket.user = user;
+
+        if (!await canSendToRoom(user, roomId)) {
+          const error = new Error('Not authorized to subscribe to this room');
+          error.name = 'UnauthorizedSubscribeError';
+          action.block(error);
+          continue;
+        }
+      }
+
+      action.allow();
+    }
+  });
+
+  (async () => {
+    for await (const { socket } of agServer.listener('connection')) {
+      const user = verifySocketUser(socket);
+      socket.user = user;
+
+      (async () => {
+        for await (const request of socket.procedure('message:send')) {
+          try {
+            const { roomId, content, type = 'text' } = request.data || {};
+            if (!roomId || !content) return sendError(request, 'roomId and content are required');
+            if (!await canSendToRoom(user, roomId)) return sendError(request, 'Not authorized');
+
+            const message = await Message.create({ roomId, senderId: user.id, content, type });
+            const payload = {
+              id: message._id,
+              roomId: message.roomId,
+              senderId: message.senderId,
+              content: message.content,
+              type: message.type,
+              createdAt: message.createdAt,
+            };
+
+            agServer.exchange.transmitPublish(`room-${roomId}`, payload);
+            sendAck(request, payload);
+          } catch (err) {
+            sendError(request, err.message);
+          }
+        }
+      })();
+
+      (async () => {
+        for await (const data of socket.receiver('user:typing')) {
+          const { roomId, isTyping = true } = data || {};
+          if (!roomId || !await canSendToRoom(user, roomId)) continue;
+          agServer.exchange.transmitPublish(`room-${roomId}`, {
+            event: 'user:typing',
+            roomId,
+            userId: user.id,
+            isTyping,
+          });
+        }
+      })();
+
+      (async () => {
+        for await (const data of socket.receiver('presence')) {
+          const { roomId, state = 'online' } = data || {};
+          if (!roomId || !await canSendToRoom(user, roomId)) continue;
+          agServer.exchange.transmitPublish(`room-${roomId}`, {
+            event: 'presence',
+            roomId,
+            userId: user.id,
+            state,
+          });
+        }
+      })();
+    }
+  })();
+
+  return agServer;
+}
