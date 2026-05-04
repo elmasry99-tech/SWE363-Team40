@@ -167,7 +167,19 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
     };
 
     peer.ontrack = ({ streams, track }) => {
-      const stream = streams[0] || new MediaStream([track]);
+      const existingEntry = remoteStreamsRef.current.get(userId);
+      let stream;
+      if (streams[0]) {
+        stream = streams[0];
+      } else if (existingEntry && existingEntry.stream) {
+        stream = existingEntry.stream;
+        if (!stream.getTracks().includes(track)) {
+          stream.addTrack(track);
+        }
+      } else {
+        stream = new MediaStream([track]);
+      }
+
       const participant = participants?.find((p) => p.userId === userId);
       remoteStreamsRef.current.set(userId, {
         userId,
