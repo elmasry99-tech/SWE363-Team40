@@ -7,7 +7,7 @@ export function getBackendUrl() {
 }
 
 export function buildBackendUrl(path) {
-  return new URL(path, BACKEND_URL).toString();
+  return path;
 }
 
 export async function readJsonResponse(response) {

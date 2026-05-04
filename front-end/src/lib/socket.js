@@ -6,8 +6,10 @@ import { getBackendUrl } from "@/lib/api";
 let sharedSocket = null;
 let sharedToken = null;
 
+const BACKEND_WS_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://cyphernet-backend.onrender.com";
+
 function getSocketOptions(token) {
-  const backendUrl = new URL(getBackendUrl());
+  const backendUrl = new URL(BACKEND_WS_URL);
 
   return {
     hostname: backendUrl.hostname,
