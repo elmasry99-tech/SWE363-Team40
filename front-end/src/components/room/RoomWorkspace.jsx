@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { useSessionState } from "@/hooks/useSessionState";
+import { getSocketClient } from "@/lib/socket";
 import { ROUTES } from "@/lib/routes";
 
 function normalizeParticipants(room, currentUser) {
@@ -24,6 +25,47 @@ function normalizeParticipants(room, currentUser) {
       status: participant.status,
     };
   });
+}
+
+function normalizeMessage(message, participants, currentUser) {
+  const rawId = message.senderId?._id || message.senderId;
+  const senderId = rawId?.toString();
+  const senderName = typeof message.senderId === "object" && message.senderId?.name
+    ? message.senderId?.name
+    : (participants.find((p) => p.userId?.toString() === senderId)?.name || (senderId === currentUser?.id ? "You" : "Participant"));
+
+  if (message.type === "file") {
+    const content = JSON.parse(message.content);
+    return {
+      id: message._id || message.id,
+      type: "file",
+      author: senderId === currentUser?.id ? "You" : senderName,
+      time: new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(message.createdAt || Date.now())),
+      fileId: content.fileId,
+      fileName: content.fileName,
+      fileType: content.fileType,
+    };
+  }
+
+  if (message.type === "steg") {
+    const content = JSON.parse(message.content);
+    return {
+      id: message._id || message.id,
+      type: "steg",
+      author: senderId === currentUser?.id ? "You" : senderName,
+      time: new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(message.createdAt || Date.now())),
+      imageUrl: content.imageUrl,
+      fileId: content.fileId,
+    };
+  }
+
+  return {
+    id: message._id || message.id,
+    type: message.type || "text",
+    author: senderId === currentUser?.id ? "You" : senderName,
+    time: new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(message.createdAt || Date.now())),
+    body: message.content,
+  };
 }
 
 export function RoomWorkspace({ pathname, roomId }) {
@@ -61,13 +103,32 @@ export function RoomWorkspace({ pathname, roomId }) {
 
     loadRoom(true);
 
+    const socket = getSocketClient(state.token);
+    const channel = socket.subscribe(`room-${roomId}`);
+    let cancelled = false;
+
+    (async () => {
+      for await (const payload of channel) {
+        if (cancelled) break;
+        // The socket returns raw message objects on the root payload
+        if (payload?.type) {
+          setMessages((current) => {
+            const exists = current.some(m => m.id === payload._id || m.id === payload.id);
+            if (exists) return current;
+            return [...current, normalizeMessage(payload, participants, state.user)];
+          });
+        }
+      }
+    })();
+
     const pollInterval = setInterval(() => loadRoom(false), 5000);
 
     return () => {
       cancelled = true;
+      socket.unsubscribe(`room-${roomId}`);
       clearInterval(pollInterval);
     };
-  }, [request, roomId, state.hydrated, state.isAuthenticated]);
+  }, [participants, request, roomId, state.hydrated, state.isAuthenticated, state.token, state.user]);
 
   const participants = useMemo(
     () => normalizeParticipants(room || {}, state.user),

@@ -98,33 +98,9 @@ export function ChatPanel({ roomId, participants, uploadedFile, onUploadSent, me
   }, [request, roomId]);
 
   useEffect(() => {
-    if (!state.token) return undefined;
-
-    const socket = getSocketClient(state.token);
-    const channel = socket.subscribe(`room-${roomId}`);
-    let cancelled = false;
-
-    async function watchChannel() {
-      for await (const payload of channel) {
-        if (cancelled) break;
-        if (payload?.event) continue;
-        setMessages((current) => {
-          // Prevent duplicates if history load and socket message overlap
-          if (current.some(m => m.id === payload._id || m.id === payload.id)) return current;
-          return [
-            ...current,
-            normalizeMessage(payload, participants, currentUser),
-          ];
-        });
-      }
-    }
-
-    watchChannel();
-    return () => {
-      cancelled = true;
-      channel.unsubscribe();
-    };
-  }, [currentUser, participants, roomId, state.token]);
+    if (!state.hydrated || !state.isAuthenticated || !roomId) return undefined;
+    loadHistory();
+  }, [roomId, state.hydrated, state.isAuthenticated]);
 
   async function sendTextMessage() {
     const trimmed = draft.trim();
