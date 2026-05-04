@@ -35,8 +35,8 @@ export function createApp() {
   const app = express();
   app.use(cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-      callback(new Error('Not allowed by CORS'));
+      // Dynamically allow any origin for the frontend deployment
+      callback(null, true);
     },
     credentials: true,
   }));
