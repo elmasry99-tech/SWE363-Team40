@@ -14,9 +14,11 @@ function userCanManageRoom(user, room) {
 }
 
 function roomFilterFor(user) {
-  if (user.role === 'admin') return {};
+  const baseFilter = { status: { $ne: 'archived' } };
+  if (user.role === 'admin') return baseFilter;
   if (user.orgId) {
     return {
+      ...baseFilter,
       $or: [
         { orgId: user.orgId },
         { hostId: user.id },
@@ -25,6 +27,7 @@ function roomFilterFor(user) {
     };
   }
   return {
+    ...baseFilter,
     $or: [
       { hostId: user.id },
       { 'participants.userId': user.id },
@@ -143,11 +146,10 @@ router.delete('/:id', requireAuth, async (req, res) => {
     if (!room) return res.status(404).json({ error: 'Room not found' });
     if (!userCanManageRoom(req.user, room)) return res.status(403).json({ error: 'Not authorized' });
 
-    room.status = 'archived';
-    await room.save();
-    await AuditLog.create({ actorId: req.user.id, action: 'room.archive', target: room._id.toString() });
+    await Room.findByIdAndDelete(req.params.id);
+    await AuditLog.create({ actorId: req.user.id, action: 'room.delete', target: req.params.id });
 
-    res.json({ message: 'Room archived' });
+    res.json({ message: 'Room deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
