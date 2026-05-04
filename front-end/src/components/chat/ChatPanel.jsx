@@ -240,7 +240,7 @@ export function ChatPanel({ roomId, participants, uploadedFile, onUploadSent }) 
               <StegMessage
                 key={message.id}
                 message={message}
-                canReveal={message.author !== "You"}
+                canReveal
                 onReveal={() => revealMessage(message)}
                 requestBlob={requestBlob}
               />
