@@ -81,14 +81,14 @@ export function initRealtime(httpServer) {
               continue;
             }
 
-            const message = await Message.create({ roomId, senderId: user.id, content, type });
+            // Ephemeral: broadcast without storing in DB
             const payload = {
-              id: message._id,
-              roomId: message.roomId,
-              senderId: message.senderId,
-              content: message.content,
-              type: message.type,
-              createdAt: message.createdAt,
+              id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+              roomId,
+              senderId: user.id,
+              content,
+              type,
+              createdAt: new Date().toISOString(),
             };
 
             agServer.exchange.transmitPublish(`room-${roomId}`, payload);
