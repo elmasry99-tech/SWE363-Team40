@@ -33,7 +33,7 @@ function Field({ label, type = "text", placeholder, name, value, onChange, error
 
 export function AuthGateway() {
   const router = useRouter();
-  const { hydrated, state, login, signup, setSignupPendingRole } = useSessionState();
+  const { hydrated, state, login, signup, request, setSignupPendingRole } = useSessionState();
   const joiningRoomRef = useRef(false);
 
   useEffect(() => {
@@ -175,26 +175,15 @@ export function AuthGateway() {
             role: "guest",
           });
 
-          const loginResult = await login({
+          await login({
             email: generatedEmail,
             password: generatedPassword,
           });
 
-          const joinResponse = await fetch("/rooms/join", {
+          const joinData = await request("/rooms/join", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${loginResult.token}`,
-            },
             body: JSON.stringify({ code: formValues.roomCode.trim() }),
           });
-
-          if (!joinResponse.ok) {
-            const errData = await joinResponse.json().catch(() => ({}));
-            throw new Error(errData.error || "Invalid room code or room is closed.");
-          }
-
-          const joinData = await joinResponse.json();
           router.replace(getRoomRoute(joinData.room.id));
           return;
         } finally {
