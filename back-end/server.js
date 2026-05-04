@@ -73,6 +73,11 @@ export function createApp() {
     return res.status(200).json({ message: 'File received successfully!', filename: req.file.filename });
   });
 
+  // Global 404 handler
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'Endpoint not found' });
+  });
+
   app.use((err, _req, res, _next) => {
     if (err?.message === 'Not allowed by CORS') {
       return res.status(403).json({ error: err.message });

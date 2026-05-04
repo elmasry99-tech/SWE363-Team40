@@ -12,10 +12,15 @@ export function buildBackendUrl(path) {
 
 export async function readJsonResponse(response) {
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`Invalid JSON response from server (${response.status}): ${text.slice(0, 100)}...`);
+  }
 
   if (!response.ok) {
-    const message = data?.error || data?.message || "Request failed";
+    const message = data?.error || data?.message || `Request failed with status ${response.status}`;
     throw new Error(message);
   }
 
