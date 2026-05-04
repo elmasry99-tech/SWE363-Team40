@@ -57,7 +57,9 @@ export function RoomsList({ pathname }) {
     };
   }, [request, state.hydrated, state.isAuthenticated]);
 
-  const orderedRooms = useMemo(() => rooms, [rooms]);
+  const orderedRooms = useMemo(() => {
+    return (rooms || []).filter((room) => room.status !== "archived");
+  }, [rooms]);
 
   function updateCreateForm(key, value) {
     setCreateForm((current) => ({ ...current, [key]: value }));
