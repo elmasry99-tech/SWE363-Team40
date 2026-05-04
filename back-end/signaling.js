@@ -49,7 +49,7 @@ export function initSignaling(httpServer, agServer = null) {
     for await (const { socket } of server.listener('connection')) {
       const user = socket.user || socketUser(socket);
 
-      for (const event of ['call:offer', 'call:answer', 'call:ice-candidate', 'call:end', 'presence']) {
+      for (const event of ['call:offer', 'call:answer', 'call:ice-candidate', 'call:end']) {
         (async () => {
           for await (const data of socket.receiver(event)) {
             relay(server, event, user, data);

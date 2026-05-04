@@ -100,11 +100,12 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
             peersRef.current.delete(payload.fromUserId);
             removeRemoteStream(payload.fromUserId);
           } else if (payload.event === "presence") {
-            if (payload?.roomId !== roomId || payload?.fromUserId === currentUserId || payload?.state !== "online") continue;
-            const ep = peersRef.current.get(payload.fromUserId);
+            const senderId = payload.fromUserId || payload.userId;
+            if (payload?.roomId !== roomId || senderId === currentUserId || payload?.state !== "online") continue;
+            const ep = peersRef.current.get(senderId);
             if (ep && ep.signalingState !== "closed") continue;
-            if (currentUserId < payload.fromUserId) {
-              await makeOffer(payload.fromUserId);
+            if (currentUserId < senderId) {
+              await makeOffer(senderId);
             }
           }
         } catch (err) {
@@ -147,6 +148,14 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
 
     const peer = new RTCPeerConnection({ iceServers });
 
+    // Pre-allocate transceivers so the connection has media slots from the start
+    peer.addTransceiver("audio", { direction: "sendrecv" });
+    peer.addTransceiver("video", { direction: "sendrecv" });
+
+    peer.onnegotiationneeded = () => {
+      makeOffer(userId);
+    };
+
     peer.onicecandidate = ({ candidate }) => {
       if (candidate) {
         socketRef.current?.transmit("call:ice-candidate", {
@@ -157,19 +166,24 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
       }
     };
 
-    peer.ontrack = ({ streams }) => {
-      if (!streams[0]) return;
+    peer.ontrack = ({ streams, track }) => {
+      const stream = streams[0] || new MediaStream([track]);
       const participant = participants?.find((p) => p.userId === userId);
       remoteStreamsRef.current.set(userId, {
         userId,
         name: participant?.name || "Participant",
-        stream: streams[0],
+        stream,
       });
       setRemoteStreams([...remoteStreamsRef.current.values()]);
     };
 
     localStreamRef.current?.getTracks().forEach((track) => {
-      peer.addTrack(track, localStreamRef.current);
+      const sender = peer.getTransceivers().find(t => t.receiver?.track?.kind === track.kind)?.sender;
+      if (sender) {
+        sender.replaceTrack(track);
+      } else {
+        peer.addTrack(track, localStreamRef.current);
+      }
     });
 
     peersRef.current.set(userId, peer);
@@ -209,7 +223,14 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
       const [audioTrack] = audioStream.getAudioTracks();
       if (audioTrack) {
         localStreamRef.current.addTrack(audioTrack);
-        peersRef.current.forEach((peer) => peer.addTrack(audioTrack, localStreamRef.current));
+        peersRef.current.forEach((peer) => {
+          const sender = peer.getTransceivers().find(t => t.receiver?.track?.kind === "audio")?.sender;
+          if (sender) {
+            sender.replaceTrack(audioTrack);
+          } else {
+            peer.addTrack(audioTrack, localStreamRef.current);
+          }
+        });
       }
     }
 
@@ -252,7 +273,7 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
 
         if (videoTrack) {
           peersRef.current.forEach((peer) => {
-            const sender = peer.getSenders().find((entry) => entry.track?.kind === "video");
+            const sender = peer.getTransceivers().find(t => t.receiver?.track?.kind === "video")?.sender;
             if (sender) {
               sender.replaceTrack(videoTrack);
             } else {
@@ -278,7 +299,7 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
       }
 
       peersRef.current.forEach((peer) => {
-        const sender = peer.getSenders().find((entry) => entry.track?.kind === "video");
+        const sender = peer.getTransceivers().find(t => t.receiver?.track?.kind === "video")?.sender;
         if (sender) {
           sender.replaceTrack(null);
         }
@@ -296,7 +317,7 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
       if (sharing) {
         const cameraTrack = localStreamRef.current?.getVideoTracks()[0] || null;
         peersRef.current.forEach((peer) => {
-          const sender = peer.getSenders().find((entry) => entry.track?.kind === "video");
+          const sender = peer.getTransceivers().find(t => t.receiver?.track?.kind === "video")?.sender;
           if (sender) {
             sender.replaceTrack(cameraTrack);
           }
@@ -313,7 +334,7 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
       screenStreamRef.current = displayStream;
 
       peersRef.current.forEach((peer) => {
-        const sender = peer.getSenders().find((entry) => entry.track?.kind === "video");
+        const sender = peer.getTransceivers().find(t => t.receiver?.track?.kind === "video")?.sender;
         if (sender) {
           sender.replaceTrack(screenTrack);
         } else if (localStreamRef.current) {
