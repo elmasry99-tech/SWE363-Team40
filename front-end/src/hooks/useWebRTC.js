@@ -67,44 +67,48 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
 
         try {
           if (payload.event === "call:offer") {
-            if (payload?.roomId !== roomId || payload?.targetUserId !== currentUserId) continue;
-            const existingPeer = peersRef.current.get(payload.fromUserId);
+            const fromUserId = payload.fromUserId?.toString();
+            if (payload?.roomId !== roomId || payload?.targetUserId?.toString() !== currentUserId?.toString()) continue;
+            const existingPeer = peersRef.current.get(fromUserId);
             if (existingPeer && existingPeer.signalingState !== "stable") {
               existingPeer.close();
-              peersRef.current.delete(payload.fromUserId);
+              peersRef.current.delete(fromUserId);
             }
-            const peer = getPeerConnection(payload.fromUserId);
+            const peer = getPeerConnection(fromUserId);
             await peer.setRemoteDescription(new RTCSessionDescription(payload.offer));
             const answer = await peer.createAnswer();
             await peer.setLocalDescription(answer);
             socket.transmit("call:answer", {
               roomId,
-              targetUserId: payload.fromUserId,
+              targetUserId: fromUserId,
               answer,
             });
           } else if (payload.event === "call:answer") {
-            if (payload?.roomId !== roomId || payload?.targetUserId !== currentUserId) continue;
-            const peer = peersRef.current.get(payload.fromUserId);
+            const fromUserId = payload.fromUserId?.toString();
+            if (payload?.roomId !== roomId || payload?.targetUserId?.toString() !== currentUserId?.toString()) continue;
+            const peer = peersRef.current.get(fromUserId);
             if (!peer || peer.signalingState !== "have-local-offer") continue;
             await peer.setRemoteDescription(new RTCSessionDescription(payload.answer));
           } else if (payload.event === "call:ice-candidate") {
-            if (payload?.roomId !== roomId || payload?.targetUserId !== currentUserId) continue;
-            const peer = peersRef.current.get(payload.fromUserId);
+            const fromUserId = payload.fromUserId?.toString();
+            if (payload?.roomId !== roomId || payload?.targetUserId?.toString() !== currentUserId?.toString()) continue;
+            const peer = peersRef.current.get(fromUserId);
             if (peer && payload.candidate) {
               await peer.addIceCandidate(new RTCIceCandidate(payload.candidate));
             }
           } else if (payload.event === "call:end") {
             if (payload?.roomId !== roomId) continue;
-            const peer = peersRef.current.get(payload.fromUserId);
+            const fromUserId = payload.fromUserId?.toString();
+            const peer = peersRef.current.get(fromUserId);
             peer?.close();
-            peersRef.current.delete(payload.fromUserId);
-            removeRemoteStream(payload.fromUserId);
+            peersRef.current.delete(fromUserId);
+            removeRemoteStream(fromUserId);
           } else if (payload.event === "presence") {
-            const senderId = payload.fromUserId || payload.userId;
-            if (payload?.roomId !== roomId || senderId === currentUserId || payload?.state !== "online") continue;
+            const senderId = (payload.fromUserId || payload.userId)?.toString();
+            if (payload?.roomId !== roomId || senderId === currentUserId?.toString() || payload?.state !== "online") continue;
             const ep = peersRef.current.get(senderId);
             if (ep && ep.signalingState !== "closed") continue;
-            if (currentUserId < senderId) {
+            if (currentUserId?.toString() < senderId) {
               await makeOffer(senderId);
             }
           }
@@ -180,9 +184,9 @@ export function useWebRTC({ token, roomId, currentUserId, participants }) {
         stream = new MediaStream([track]);
       }
 
-      const participant = participants?.find((p) => p.userId === userId);
-      remoteStreamsRef.current.set(userId, {
-        userId,
+      const participant = participants?.find((p) => p.userId?.toString() === userId?.toString());
+      remoteStreamsRef.current.set(userId?.toString(), {
+        userId: userId?.toString(),
         name: participant?.name || "Participant",
         stream,
       });
