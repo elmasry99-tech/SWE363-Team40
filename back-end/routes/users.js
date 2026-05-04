@@ -90,4 +90,22 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /users/me  — any authenticated user can delete their own account
+router.delete('/me', requireAuth, async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    await AuditLog.create({
+      actorId: req.user.id,
+      action: 'user.self_delete',
+      target: req.user.id,
+    });
+
+    res.json({ message: 'Account deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
