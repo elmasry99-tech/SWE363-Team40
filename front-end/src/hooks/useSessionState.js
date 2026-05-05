@@ -111,8 +111,9 @@ async function request(path, options = {}) {
     headers.set("Accept", "application/json");
   }
 
-  if (store.token) {
-    headers.set("Authorization", `Bearer ${store.token}`);
+  const token = options.token || store.token;
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
   const response = await fetch(buildBackendUrl(path), {

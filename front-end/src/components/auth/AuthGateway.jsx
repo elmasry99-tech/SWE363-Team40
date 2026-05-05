@@ -33,7 +33,7 @@ function Field({ label, type = "text", placeholder, name, value, onChange, error
 
 export function AuthGateway() {
   const router = useRouter();
-  const { hydrated, state, login, signup, request, setSignupPendingRole } = useSessionState();
+  const { hydrated, state, login, signup, request, setSignupPendingRole, signOut } = useSessionState();
   const joiningRoomRef = useRef(false);
 
   useEffect(() => {
@@ -165,6 +165,9 @@ export function AuthGateway() {
       if (mode === "guest") {
         joiningRoomRef.current = true;
         try {
+          // Clear any existing session to start fresh
+          signOut();
+
           const generatedEmail = `guest_${Date.now()}@guest.local`;
           const generatedPassword = `Guest123!${Math.random().toString(36).substring(2, 10)}`;
 
@@ -175,19 +178,36 @@ export function AuthGateway() {
             role: "guest",
           });
 
-          await login({
+          const loginData = await login({
             email: generatedEmail,
             password: generatedPassword,
           });
 
+          // Ensure we have a token from the login response
+          if (!loginData.token) {
+            throw new Error("Guest session could not be established.");
+          }
+
+          // Format room code robustly
+          let code = formValues.roomCode.trim().toUpperCase();
+          if (!code.startsWith("CN-")) {
+            code = `CN-${code}`;
+          }
+
+          // Use the token directly from loginData to bypass state sync lag
           const joinData = await request("/rooms/join", {
             method: "POST",
-            body: JSON.stringify({ code: formValues.roomCode.trim() }),
+            token: loginData.token,
+            body: JSON.stringify({ code }),
           });
+          
+          // We don't set joiningRoomRef.current = false here because we are about to navigate.
+          // Leaving it true prevents the default redirect in the useEffect.
           router.replace(getRoomRoute(joinData.room.id));
           return;
-        } finally {
+        } catch (error) {
           joiningRoomRef.current = false;
+          throw error;
         }
       }
 

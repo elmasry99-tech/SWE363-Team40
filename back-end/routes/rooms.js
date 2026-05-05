@@ -156,11 +156,12 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 router.post('/join', requireAuth, async (req, res) => {
+  try {
     let { code } = req.body;
     if (!isNonEmptyString(code)) return res.status(400).json({ error: 'code is required' });
     
     code = code.trim().toUpperCase();
-    if (!code.startsWith('CN-') && code.length >= 4) {
+    if (!code.startsWith('CN-')) {
       code = `CN-${code}`;
     }
 

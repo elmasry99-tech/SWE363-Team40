@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Trash2, UserMinus, Users, Video, X } from "lucide-react";
 import { AppScaffold } from "@/components/common/AppScaffold";
@@ -77,6 +77,13 @@ export function RoomWorkspace({ pathname, roomId }) {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [messages, setMessages] = useState([]);
 
+  const participants = useMemo(
+    () => normalizeParticipants(room || {}, state.user),
+    [room, state.user],
+  );
+  const participantsRef = useRef(participants);
+  participantsRef.current = participants;
+
   useEffect(() => {
     if (!state.hydrated || !state.isAuthenticated) return;
 
@@ -105,17 +112,15 @@ export function RoomWorkspace({ pathname, roomId }) {
 
     const socket = getSocketClient(state.token);
     const channel = socket.subscribe(`room-${roomId}`);
-    let cancelled = false;
 
     (async () => {
       for await (const payload of channel) {
         if (cancelled) break;
-        // The socket returns raw message objects on the root payload
         if (payload?.type) {
           setMessages((current) => {
             const exists = current.some(m => m.id === payload._id || m.id === payload.id);
             if (exists) return current;
-            return [...current, normalizeMessage(payload, participants, state.user)];
+            return [...current, normalizeMessage(payload, participantsRef.current, state.user)];
           });
         }
       }
@@ -128,12 +133,7 @@ export function RoomWorkspace({ pathname, roomId }) {
       socket.unsubscribe(`room-${roomId}`);
       clearInterval(pollInterval);
     };
-  }, [participants, request, roomId, state.hydrated, state.isAuthenticated, state.token, state.user]);
-
-  const participants = useMemo(
-    () => normalizeParticipants(room || {}, state.user),
-    [room, state.user],
-  );
+  }, [request, roomId, state.hydrated, state.isAuthenticated, state.token, state.user]);
 
   const canManageRoom = useMemo(() => {
     if (!room || !state.user) return false;
