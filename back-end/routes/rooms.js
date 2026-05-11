@@ -104,7 +104,8 @@ router.get('/:id', requireAuth, async (req, res) => {
     if (!room) return res.status(404).json({ error: 'Room not found' });
 
     const allowed = userCanManageRoom(req.user, room)
-      || room.participants.some((participant) => participant.userId?.toString() === req.user.id);
+      || room.participants.some((participant) => participant.userId?.toString() === req.user.id)
+      || (req.user.orgId && room.orgId && req.user.orgId.toString() === room.orgId.toString());
     if (!allowed) return res.status(403).json({ error: 'Not authorized' });
 
     res.json({ room: serializeRoom(room) });

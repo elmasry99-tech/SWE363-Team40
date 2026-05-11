@@ -23,7 +23,7 @@ async function canAccessRoom(user, roomId) {
   const allowed = user.role === 'admin'
     || room.hostId?.toString() === user.id
     || participant?.status === 'admitted'
-    || (user.role === 'oso' && user.orgId && room.orgId?.toString() === user.orgId);
+    || (user.orgId && room.orgId && room.orgId.toString() === user.orgId.toString());
   return { allowed, room, status: allowed ? 200 : 403 };
 }
 
